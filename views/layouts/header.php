@@ -23,7 +23,7 @@
                     <span class="navbar-text me-3">
                         Olá, <?php echo $_SESSION['user_name']; ?>!
                     </span>
-                    <a class="nav-link" href="<?php echo SITE_URL; ?>/logout.php">Sair</a>
+                    <a class="nav-link" href="<?php echo SITE_URL; ?>/logout.php">Sair</a>>
                 <?php else: ?>
                     <a class="nav-link" href="<?php echo SITE_URL; ?>/views/auth/login.php">Login</a>
                     <a class="nav-link" href="<?php echo SITE_URL; ?>/views/auth/register.php">Cadastrar</a>

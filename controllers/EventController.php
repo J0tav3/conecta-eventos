@@ -186,6 +186,68 @@ class EventController {
     }
     
     /**
+     * Contar eventos com filtros
+     */
+    public function count($filters = []) {
+        $where = ['1=1'];
+        $params = [];
+        
+        // Aplicar filtros
+        if (!empty($filters['organizador_id'])) {
+            $where[] = "id_organizador = ?";
+            $params[] = $filters['organizador_id'];
+        }
+        
+        if (!empty($filters['status'])) {
+            $where[] = "status = ?";
+            $params[] = $filters['status'];
+        }
+        
+        if (!empty($filters['categoria_id'])) {
+            $where[] = "id_categoria = ?";
+            $params[] = $filters['categoria_id'];
+        }
+        
+        if (!empty($filters['cidade'])) {
+            $where[] = "local_cidade LIKE ?";
+            $params[] = "%{$filters['cidade']}%";
+        }
+        
+        if (!empty($filters['busca'])) {
+            $where[] = "(titulo LIKE ? OR descricao LIKE ?)";
+            $params[] = "%{$filters['busca']}%";
+            $params[] = "%{$filters['busca']}%";
+        }
+        
+        if (isset($filters['gratuito'])) {
+            $where[] = "evento_gratuito = ?";
+            $params[] = $filters['gratuito'] ? 1 : 0;
+        }
+        
+        if (!empty($filters['data_inicio'])) {
+            $where[] = "data_inicio >= ?";
+            $params[] = $filters['data_inicio'];
+        }
+        
+        if (!empty($filters['data_fim'])) {
+            $where[] = "data_inicio <= ?";
+            $params[] = $filters['data_fim'];
+        }
+        
+        $database = new Database();
+        $conn = $database->getConnection();
+        
+        $query = "SELECT COUNT(*) as total FROM eventos 
+                  WHERE " . implode(' AND ', $where);
+        
+        $stmt = $conn->prepare($query);
+        $stmt->execute($params);
+        
+        $result = $stmt->fetch();
+        return $result['total'];
+    }
+    
+    /**
      * Upload de imagem
      */
     private function uploadImage($file) {
@@ -251,7 +313,7 @@ class EventController {
         $filters['offset'] = $offset;
         
         $items = $this->eventModel->list($filters);
-        $total = $this->eventModel->count($filters);
+        $total = $this->count($filters);
         $totalPages = ceil($total / $perPage);
         
         return [
@@ -359,6 +421,38 @@ class EventController {
         ];
         
         return $this->eventModel->create($novoEvento);
+    }
+    
+    /**
+     * Listar eventos por organizador com estatísticas
+     */
+    public function getEventsByOrganizer($organizador_id, $filters = []) {
+        $filters['organizador_id'] = $organizador_id;
+        return $this->eventModel->list($filters);
+    }
+    
+    /**
+     * Obter eventos próximos do organizador
+     */
+    public function getUpcomingEventsByOrganizer($organizador_id, $limit = 5) {
+        return $this->eventModel->list([
+            'organizador_id' => $organizador_id,
+            'status' => 'publicado',
+            'data_inicio' => date('Y-m-d H:i:s'),
+            'limite' => $limit,
+            'ordem' => 'data_inicio'
+        ]);
+    }
+    
+    /**
+     * Obter eventos recentes do organizador
+     */
+    public function getRecentEventsByOrganizer($organizador_id, $limit = 5) {
+        return $this->eventModel->list([
+            'organizador_id' => $organizador_id,
+            'limite' => $limit,
+            'ordem' => 'data_criacao'
+        ]);
     }
 }
 ?>
