@@ -1,4 +1,4 @@
-php<?php
+<?php
 // Controle de Sessão - Conecta Eventos
 
 // Iniciar sessão se não estiver iniciada

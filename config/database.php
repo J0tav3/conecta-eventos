@@ -22,11 +22,10 @@ class Database {
             $this->conn = new PDO($dsn, $this->username, $this->password);
             $this->conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             $this->conn->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
-            
-            echo "Conexão com banco estabelecida!<br>";
         } catch(PDOException $e) {
-            echo "Erro na conexão: " . $e->getMessage();
-            die();
+            // Para APIs, melhor não ecoar diretamente
+            error_log("Erro na conexão: " . $e->getMessage());
+            throw new Exception("Erro na conexão com o banco de dados");
         }
         
         return $this->conn;
