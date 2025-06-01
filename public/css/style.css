@@ -153,3 +153,127 @@ body {
 main {
     flex: 1;
 }
+/* Estados específicos dos botões de inscrição */
+#subscribe-btn {
+    background: linear-gradient(45deg, #28a745, #20c997);
+    border: none;
+    font-weight: 600;
+    padding: 0.75rem 2rem;
+    transition: all 0.3s ease;
+}
+
+#subscribe-btn:hover:not(:disabled) {
+    background: linear-gradient(45deg, #218838, #1ea085);
+    box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+    transform: translateY(-1px);
+}
+
+#subscribe-btn:disabled {
+    opacity: 0.7;
+    cursor: not-allowed;
+    transform: none;
+}
+
+#unsubscribe-btn {
+    transition: all 0.3s ease;
+}
+
+#unsubscribe-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 15px rgba(220, 53, 69, 0.3);
+}
+
+/* Loading spinner */
+.spinner-border-sm {
+    width: 1rem;
+    height: 1rem;
+}
+
+/* Toast notifications melhoradas */
+.toast-notification {
+    border-radius: 0.5rem;
+    border: none;
+    font-weight: 500;
+}
+
+.toast-notification.alert-success {
+    background: linear-gradient(45deg, #d4edda, #c3e6cb);
+    border-left: 4px solid #28a745;
+    color: #155724;
+}
+
+.toast-notification.alert-danger {
+    background: linear-gradient(45deg, #f8d7da, #f1b0b7);
+    border-left: 4px solid #dc3545;
+    color: #721c24;
+}
+
+.toast-notification.alert-info {
+    background: linear-gradient(45deg, #d1ecf1, #bee5eb);
+    border-left: 4px solid #17a2b8;
+    color: #0c5460;
+}
+
+/* Container de inscrição */
+#subscription-container {
+    transition: all 0.3s ease;
+}
+
+#subscription-container .alert {
+    margin-bottom: 1rem;
+    border-radius: 0.5rem;
+}
+
+/* Animações de entrada */
+@keyframes slideInRight {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOutRight {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+}
+
+.toast-notification {
+    animation: slideInRight 0.3s ease-out;
+}
+
+/* Estados de sucesso */
+.subscription-success {
+    animation: pulse 0.6s ease-in-out;
+}
+
+@keyframes pulse {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.05); }
+    100% { transform: scale(1); }
+}
+
+/* Responsividade para mobile */
+@media (max-width: 768px) {
+    .toast-notification {
+        right: 10px;
+        left: 10px;
+        min-width: auto;
+        max-width: none;
+    }
+    
+    #subscribe-btn,
+    #unsubscribe-btn {
+        padding: 0.75rem 1rem;
+        font-size: 0.9rem;
+    }
+}

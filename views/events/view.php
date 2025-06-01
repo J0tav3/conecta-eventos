@@ -103,6 +103,56 @@ if ($canEdit) {
         .btn-action {
             margin: 0.25rem;
         }
+
+        /* Estilos para o sistema de inscrição */
+        @keyframes slideInRight {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOutRight {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+            to {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+        }
+
+        .toast-notification {
+            animation: slideInRight 0.3s ease-out;
+        }
+
+        #subscribe-btn {
+            background: linear-gradient(45deg, #28a745, #20c997);
+            border: none;
+            font-weight: 600;
+            padding: 0.75rem 2rem;
+            transition: all 0.3s ease;
+        }
+
+        #subscribe-btn:hover:not(:disabled) {
+            background: linear-gradient(45deg, #218838, #1ea085);
+            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+            transform: translateY(-1px);
+        }
+
+        #unsubscribe-btn {
+            transition: all 0.3s ease;
+        }
+
+        #unsubscribe-btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(220, 53, 69, 0.3);
+        }
     </style>
 </head>
 <body>
@@ -354,15 +404,18 @@ if ($canEdit) {
                                     Vagas esgotadas
                                 </div>
                             <?php else: ?>
-                                <div class="d-grid">
-                                    <button class="btn btn-primary btn-lg">
-                                        <i class="fas fa-user-plus me-2"></i>
-                                        Inscrever-se
-                                    </button>
+                                <!-- Container dinâmico para inscrição -->
+                                <div id="subscription-container">
+                                    <div class="d-grid">
+                                        <button id="subscribe-btn" class="btn btn-primary btn-lg">
+                                            <i class="fas fa-user-plus me-2"></i>
+                                            Inscrever-se
+                                        </button>
+                                    </div>
+                                    <small class="text-muted mt-2 d-block">
+                                        Clique para se inscrever no evento
+                                    </small>
                                 </div>
-                                <small class="text-muted mt-2 d-block">
-                                    Clique para se inscrever no evento
-                                </small>
                             <?php endif; ?>
                         <?php else: ?>
                             <div class="alert alert-info">
@@ -439,8 +492,267 @@ if ($canEdit) {
     <?php include '../../views/layouts/footer.php'; ?>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Variables for JavaScript -->
     <script>
-        // Confirmações para ações importantes
+        // Definir variáveis globais para o JavaScript
+        window.EVENT_ID = <?php echo $eventId; ?>;
+        window.USER_ID = <?php echo isLoggedIn() ? getUserId() : 'null'; ?>;
+        window.SITE_URL = '<?php echo SITE_URL; ?>';
+    </script>
+
+    <!-- Sistema de Inscrição AJAX -->
+    <script>
+    class SubscriptionManager {
+        constructor(eventId, userId = null) {
+            this.eventId = eventId;
+            this.userId = userId;
+            this.apiUrl = window.SITE_URL + '/api/subscriptions.php';
+            this.init();
+        }
+
+        init() {
+            this.bindEvents();
+            if (this.userId) {
+                this.checkSubscriptionStatus();
+            }
+        }
+
+        bindEvents() {
+            const subscribeBtn = document.getElementById('subscribe-btn');
+            if (subscribeBtn) {
+                subscribeBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.toggleSubscription();
+                });
+            }
+
+            const unsubscribeBtn = document.getElementById('unsubscribe-btn');
+            if (unsubscribeBtn) {
+                unsubscribeBtn.addEventListener('click', (e) => {
+                    e.preventDefault();
+                    this.unsubscribe();
+                });
+            }
+        }
+
+        async checkSubscriptionStatus() {
+            try {
+                const response = await fetch(`${this.apiUrl}?action=status&event_id=${this.eventId}`);
+                const data = await response.json();
+
+                if (data.success) {
+                    this.updateButtonState(data.is_subscribed, data.subscription_status);
+                }
+            } catch (error) {
+                console.error('Erro ao verificar status da inscrição:', error);
+            }
+        }
+
+        async toggleSubscription() {
+            if (!this.userId) {
+                this.showLoginRequired();
+                return;
+            }
+
+            const btn = document.getElementById('subscribe-btn');
+            const originalText = btn.innerHTML;
+            
+            this.setButtonLoading(btn, true);
+
+            try {
+                const response = await fetch(this.apiUrl, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        event_id: this.eventId,
+                        observations: 'Inscrição via plataforma web'
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    this.showSuccessMessage(data.message);
+                    this.updateButtonState(data.is_subscribed, data.subscription_status);
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    this.showErrorMessage(data.message);
+                }
+            } catch (error) {
+                console.error('Erro na inscrição:', error);
+                this.showErrorMessage('Erro de conexão. Tente novamente.');
+            } finally {
+                this.setButtonLoading(btn, false, originalText);
+            }
+        }
+
+        async unsubscribe() {
+            if (!confirm('Tem certeza que deseja cancelar sua inscrição?')) {
+                return;
+            }
+
+            const btn = document.getElementById('unsubscribe-btn');
+            const originalText = btn.innerHTML;
+            
+            this.setButtonLoading(btn, true);
+
+            try {
+                const response = await fetch(this.apiUrl, {
+                    method: 'DELETE',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        event_id: this.eventId
+                    })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    this.showSuccessMessage(data.message);
+                    this.updateButtonState(false);
+                    setTimeout(() => location.reload(), 1500);
+                } else {
+                    this.showErrorMessage(data.message);
+                }
+            } catch (error) {
+                console.error('Erro ao cancelar inscrição:', error);
+                this.showErrorMessage('Erro de conexão. Tente novamente.');
+            } finally {
+                this.setButtonLoading(btn, false, originalText);
+            }
+        }
+
+        updateButtonState(isSubscribed, subscriptionStatus = null) {
+            const subscriptionContainer = document.getElementById('subscription-container');
+            if (!subscriptionContainer) return;
+
+            if (isSubscribed) {
+                subscriptionContainer.innerHTML = `
+                    <div class="alert alert-success">
+                        <i class="fas fa-check-circle me-2"></i>
+                        Você está inscrito neste evento!
+                        ${subscriptionStatus ? `<br><small>Status: ${this.getStatusText(subscriptionStatus.status || 'confirmada')}</small>` : ''}
+                    </div>
+                    <div class="d-grid">
+                        <button id="unsubscribe-btn" class="btn btn-outline-danger">
+                            <i class="fas fa-times me-2"></i>
+                            Cancelar Inscrição
+                        </button>
+                    </div>
+                `;
+            } else {
+                subscriptionContainer.innerHTML = `
+                    <div class="d-grid">
+                        <button id="subscribe-btn" class="btn btn-primary btn-lg">
+                            <i class="fas fa-user-plus me-2"></i>
+                            Inscrever-se
+                        </button>
+                    </div>
+                    <small class="text-muted mt-2 d-block">
+                        Clique para se inscrever no evento
+                    </small>
+                `;
+            }
+            
+            this.bindEvents();
+        }
+
+        setButtonLoading(button, isLoading, originalText = '') {
+            if (isLoading) {
+                button.disabled = true;
+                button.innerHTML = `
+                    <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                    Processando...
+                `;
+            } else {
+                button.disabled = false;
+                if (originalText) {
+                    button.innerHTML = originalText;
+                }
+            }
+        }
+
+        showSuccessMessage(message) {
+            this.showToast(message, 'success');
+        }
+
+        showErrorMessage(message) {
+            this.showToast(message, 'danger');
+        }
+
+        showLoginRequired() {
+            this.showToast('Você precisa fazer login para se inscrever.', 'info');
+            setTimeout(() => {
+                window.location.href = window.SITE_URL + '/views/auth/login.php';
+            }, 2000);
+        }
+
+        showToast(message, type = 'info') {
+            const existingToasts = document.querySelectorAll('.toast-notification');
+            existingToasts.forEach(toast => toast.remove());
+
+            const toast = document.createElement('div');
+            toast.className = `toast-notification alert alert-${type} alert-dismissible fade show position-fixed`;
+            toast.style.cssText = `
+                top: 20px;
+                right: 20px;
+                z-index: 9999;
+                min-width: 300px;
+                max-width: 400px;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+                animation: slideInRight 0.3s ease-out;
+            `;
+            
+            toast.innerHTML = `
+                <i class="fas fa-${this.getIconForType(type)} me-2"></i>
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+
+            document.body.appendChild(toast);
+
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.style.animation = 'slideOutRight 0.3s ease-in';
+                    setTimeout(() => toast.remove(), 300);
+                }
+            }, 5000);
+        }
+
+        getIconForType(type) {
+            const icons = {
+                'success': 'check-circle',
+                'danger': 'exclamation-triangle',
+                'warning': 'exclamation-triangle',
+                'info': 'info-circle'
+            };
+            return icons[type] || 'bell';
+        }
+
+        getStatusText(status) {
+            const statusMap = {
+                'confirmada': 'Confirmada',
+                'pendente': 'Pendente',
+                'cancelada': 'Cancelada'
+            };
+            return statusMap[status] || status;
+        }
+    }
+
+    // Inicializar o sistema quando o DOM estiver pronto
+    document.addEventListener('DOMContentLoaded', function() {
+        if (window.EVENT_ID) {
+            new SubscriptionManager(window.EVENT_ID, window.USER_ID);
+        }
+    });
+
+    // Confirmações para ações importantes
+    document.addEventListener('DOMContentLoaded', function() {
         document.querySelectorAll('form button[type="submit"]').forEach(button => {
             const form = button.closest('form');
             const action = form.querySelector('input[name="action"]')?.value;
@@ -454,6 +766,223 @@ if ($canEdit) {
                 });
             }
         });
+    });
+    class FavoritesManager {
+    constructor(eventId, userId = null) {
+        this.eventId = eventId;
+        this.userId = userId;
+        this.apiUrl = window.SITE_URL + '/api/favorites.php';
+        this.init();
+    }
+
+    init() {
+        this.createFavoriteButton();
+        this.bindEvents();
+        if (this.userId) {
+            this.checkFavoriteStatus();
+        }
+    }
+
+    createFavoriteButton() {
+        // Encontrar um local para adicionar o botão de favorito
+        const eventHeader = document.querySelector('.event-header .col-md-8');
+        if (eventHeader && this.userId) {
+            const favoriteContainer = document.createElement('div');
+            favoriteContainer.id = 'favorite-container';
+            favoriteContainer.className = 'mt-3';
+            favoriteContainer.innerHTML = `
+                <button id="favorite-btn" class="btn btn-outline-light" title="Adicionar aos favoritos">
+                    <i class="far fa-heart me-2"></i>
+                    <span class="favorite-text">Favoritar</span>
+                </button>
+            `;
+            eventHeader.appendChild(favoriteContainer);
+        }
+    }
+
+    bindEvents() {
+        const favoriteBtn = document.getElementById('favorite-btn');
+        if (favoriteBtn) {
+            favoriteBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                this.toggleFavorite();
+            });
+        }
+    }
+
+    async checkFavoriteStatus() {
+        try {
+            const response = await fetch(`${this.apiUrl}?event_id=${this.eventId}`);
+            const data = await response.json();
+
+            if (data.success) {
+                this.updateFavoriteButton(data.is_favorite, data.total_favorites);
+            }
+        } catch (error) {
+            console.error('Erro ao verificar status do favorito:', error);
+        }
+    }
+
+    async toggleFavorite() {
+        if (!this.userId) {
+            this.showLoginRequired();
+            return;
+        }
+
+        const btn = document.getElementById('favorite-btn');
+        const originalHtml = btn.innerHTML;
+        
+        // Estado de loading
+        this.setButtonLoading(btn, true);
+
+        try {
+            const response = await fetch(this.apiUrl, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    event_id: this.eventId,
+                    action: 'toggle'
+                })
+            });
+
+            const data = await response.json();
+
+            if (data.success) {
+                this.showSuccessMessage(data.message);
+                this.updateFavoriteButton(data.is_favorite, data.total_favorites);
+                this.animateButton(btn);
+            } else {
+                this.showErrorMessage(data.message);
+            }
+        } catch (error) {
+            console.error('Erro ao favoritar:', error);
+            this.showErrorMessage('Erro de conexão. Tente novamente.');
+        } finally {
+            this.setButtonLoading(btn, false, originalHtml);
+        }
+    }
+
+    updateFavoriteButton(isFavorite, totalFavorites = 0) {
+        const btn = document.getElementById('favorite-btn');
+        const favoriteText = btn.querySelector('.favorite-text');
+        const icon = btn.querySelector('i');
+
+        if (isFavorite) {
+            btn.className = 'btn btn-danger';
+            icon.className = 'fas fa-heart me-2';
+            favoriteText.textContent = 'Favoritado';
+            btn.title = 'Remover dos favoritos';
+        } else {
+            btn.className = 'btn btn-outline-light';
+            icon.className = 'far fa-heart me-2';
+            favoriteText.textContent = 'Favoritar';
+            btn.title = 'Adicionar aos favoritos';
+        }
+
+        // Atualizar contador se existir
+        this.updateFavoriteCounter(totalFavorites);
+    }
+
+    updateFavoriteCounter(total) {
+        let counterElement = document.getElementById('favorite-counter');
+        if (!counterElement) {
+            // Criar contador se não existir
+            const favoriteContainer = document.getElementById('favorite-container');
+            if (favoriteContainer) {
+                counterElement = document.createElement('small');
+                counterElement.id = 'favorite-counter';
+                counterElement.className = 'text-light ms-2';
+                favoriteContainer.appendChild(counterElement);
+            }
+        }
+        
+        if (counterElement) {
+            counterElement.textContent = `${total} ${total === 1 ? 'pessoa favoritou' : 'pessoas favoritaram'}`;
+        }
+    }
+
+    setButtonLoading(button, isLoading, originalHtml = '') {
+        if (isLoading) {
+            button.disabled = true;
+            button.innerHTML = `
+                <span class="spinner-border spinner-border-sm me-2" role="status"></span>
+                Processando...
+            `;
+        } else {
+            button.disabled = false;
+            if (originalHtml) {
+                button.innerHTML = originalHtml;
+            }
+        }
+    }
+
+    animateButton(button) {
+        button.style.transform = 'scale(1.1)';
+        setTimeout(() => {
+            button.style.transform = 'scale(1)';
+        }, 200);
+    }
+
+    showSuccessMessage(message) {
+        this.showToast(message, 'success');
+    }
+
+    showErrorMessage(message) {
+        this.showToast(message, 'danger');
+    }
+
+    showLoginRequired() {
+        this.showToast('Você precisa fazer login para favoritar eventos.', 'info');
+    }
+
+    showToast(message, type = 'info') {
+        // Usar o mesmo sistema de toast do SubscriptionManager
+        const toast = document.createElement('div');
+        toast.className = `toast-notification alert alert-${type} alert-dismissible fade show position-fixed`;
+        toast.style.cssText = `
+            top: 80px;
+            right: 20px;
+            z-index: 9999;
+            min-width: 300px;
+            max-width: 400px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            animation: slideInRight 0.3s ease-out;
+        `;
+        
+        toast.innerHTML = `
+            <i class="fas fa-${this.getIconForType(type)} me-2"></i>
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+
+        document.body.appendChild(toast);
+
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.style.animation = 'slideOutRight 0.3s ease-in';
+                setTimeout(() => toast.remove(), 300);
+            }
+        }, 4000);
+    }
+
+    getIconForType(type) {
+        const icons = {
+            'success': 'heart',
+            'danger': 'exclamation-triangle',
+            'info': 'info-circle'
+        };
+        return icons[type] || 'bell';
+    }
+}
+
+// Inicializar o sistema de favoritos
+document.addEventListener('DOMContentLoaded', function() {
+    if (window.EVENT_ID && window.USER_ID) {
+        new FavoritesManager(window.EVENT_ID, window.USER_ID);
+    }
+});
     </script>
 </body>
 </html>
