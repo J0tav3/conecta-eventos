@@ -1,0 +1,33 @@
+# Uploads e arquivos temporários
+public/uploads/*
+!public/uploads/.gitkeep
+*.tmp
+*.cache
+*.log
+
+# Configurações locais
+config/local.php
+.env.local
+
+# Dependências
+vendor/
+node_modules/
+
+# Arquivos do sistema
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+
+# Backups
+backups/*
+!backups/.gitkeep
+
+# IDEs
+.vscode/
+.idea/
+*.sublime-*
+
+# Logs
+logs/*
+!logs/.gitkeep
