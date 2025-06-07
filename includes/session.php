@@ -12,7 +12,7 @@ if (session_status() == PHP_SESSION_NONE) {
 
 // Definir constantes se não estiverem definidas
 if (!defined('SITE_URL')) {
-    define('SITE_URL', 'https://conecta-eventos-production.up.railway.app');
+    define('SITE_URL', 'https://conecta-eventos.railway.internal');
 }
 
 /**

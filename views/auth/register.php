@@ -16,7 +16,7 @@ if (session_status() == PHP_SESSION_NONE) {
 
 // Definir constantes se não existirem
 if (!defined('SITE_URL')) {
-    define('SITE_URL', 'https://conecta-eventos-production.up.railway.app');
+    define('SITE_URL', 'https://conecta-eventos.railway.internal');
 }
 if (!defined('SITE_NAME')) {
     define('SITE_NAME', 'Conecta Eventos');
