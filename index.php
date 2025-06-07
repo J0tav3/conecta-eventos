@@ -1132,7 +1132,7 @@ $cidadesPopulares = array_slice(array_keys($cidades), 0, 8);
 </body>
 </html><?php endif; ?>
                                     
-                                    <!-- Category Badge -->
+                                     <!-- Category Badge -->
                                     <?php if (!empty($evento['nome_categoria'])): ?>
                                         <span class="badge bg-primary category-badge">
                                             <?php echo htmlspecialchars($evento['nome_categoria']); ?>
@@ -1256,3 +1256,62 @@ $cidadesPopulares = array_slice(array_keys($cidades), 0, 8);
                                             </small>
                                         <?php endif; ?>
                                     </div>
+                                    
+                                    <div class="mt-auto">
+                                        <a href="views/events/view.php?id=<?php echo $evento['id_evento']; ?>" 
+                                           class="btn btn-outline-primary btn-sm w-100">
+                                            Ver Mais
+                                        </a>
+                                    </div>
+                                </div>
+                            </article>
+                        </div>
+                    <?php endforeach; ?>
+                </div>
+                
+                <!-- Load More Button -->
+                <?php if (count($eventos) >= 12): ?>
+                    <div class="text-center mt-5">
+                        <button id="load-more-btn" class="load-more-btn" onclick="showLoadMoreMessage()">
+                            <i class="fas fa-plus me-2"></i>Carregar Mais Eventos
+                        </button>
+                    </div>
+                <?php endif; ?>
+            </div>
+        </section>
+    <?php else: ?>
+        <!-- Nenhum Evento Encontrado -->
+        <section class="py-5">
+            <div class="container">
+                <div class="text-center py-5">
+                    <i class="fas fa-calendar-times fa-4x text-muted mb-4"></i>
+                    <h3 class="mb-3">
+                        <?php if (!empty($_GET)): ?>
+                            Nenhum evento encontrado
+                        <?php else: ?>
+                            Nenhum evento disponível
+                        <?php endif; ?>
+                    </h3>
+                    <p class="text-muted mb-4">
+                        <?php if (!empty($_GET)): ?>
+                            Tente ajustar os filtros de busca ou remover algumas palavras-chave.
+                        <?php else: ?>
+                            Novos eventos são adicionados regularmente. Volte em breve!
+                        <?php endif; ?>
+                    </p>
+                    
+                    <div class="d-flex gap-3 justify-content-center flex-wrap">
+                        <?php if (!empty($_GET)): ?>
+                            <a href="?" class="btn btn-primary">
+                                <i class="fas fa-search me-2"></i>Ver Todos os Eventos
+                            </a>
+                        <?php endif; ?>
+                        
+                        <a href="views/auth/register.php" class="btn btn-outline-primary">
+                            <i class="fas fa-user-plus me-2"></i>Criar Conta
+                        </a>
+                    </div>
+                </div>
+            </div>
+        </section>
+    <?php endif; ?>
