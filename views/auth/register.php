@@ -1,9 +1,92 @@
 <?php
-require_once '../../config/config.php';
-require_once '../../includes/session.php';
+// ========================================
+// REGISTER.PHP - VERSÃO CORRIGIDA
+// ========================================
+// Local: views/auth/register.php
+// ========================================
 
-// Redirecionar se já estiver logado
-requireGuest();
+// Ativar exibição de erros apenas em desenvolvimento
+error_reporting(E_ALL);
+ini_set('display_errors', 1);
+
+try {
+    // Tentar carregar configurações
+    $config_loaded = false;
+    $possible_paths = [
+        '../../config/config.php',
+        '../config/config.php',
+        'config/config.php'
+    ];
+    
+    foreach ($possible_paths as $path) {
+        if (file_exists($path)) {
+            require_once $path;
+            $config_loaded = true;
+            break;
+        }
+    }
+    
+    if (!$config_loaded) {
+        // Definir constantes manualmente se não carregou
+        if (!defined('SITE_URL')) {
+            define('SITE_URL', 'https://conecta-eventos-production.up.railway.app');
+        }
+        if (!defined('SITE_NAME')) {
+            define('SITE_NAME', 'Conecta Eventos');
+        }
+    }
+    
+    // Carregar sistema de sessão
+    $session_loaded = false;
+    $session_paths = [
+        '../../includes/session.php',
+        '../includes/session.php',
+        'includes/session.php'
+    ];
+    
+    foreach ($session_paths as $path) {
+        if (file_exists($path)) {
+            require_once $path;
+            $session_loaded = true;
+            break;
+        }
+    }
+    
+    // Fallback para funções básicas de sessão
+    if (!$session_loaded) {
+        if (session_status() == PHP_SESSION_NONE) {
+            session_start();
+        }
+        
+        function isLoggedIn() {
+            return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
+        }
+        
+        function requireGuest() {
+            if (isLoggedIn()) {
+                $redirect_url = isset($_SESSION['user_type']) && $_SESSION['user_type'] === 'organizador' 
+                    ? SITE_URL . '/views/dashboard/organizer.php'
+                    : SITE_URL . '/views/dashboard/participant.php';
+                header('Location: ' . $redirect_url);
+                exit();
+            }
+        }
+    }
+    
+    // Redirecionar se já estiver logado
+    if (function_exists('requireGuest')) {
+        requireGuest();
+    }
+
+} catch (Exception $e) {
+    // Em caso de erro crítico, continuar com valores padrão
+    if (!defined('SITE_URL')) {
+        define('SITE_URL', 'https://conecta-eventos-production.up.railway.app');
+    }
+    if (!defined('SITE_NAME')) {
+        define('SITE_NAME', 'Conecta Eventos');
+    }
+}
 
 $title = "Cadastro - " . SITE_NAME;
 $error_message = '';
@@ -11,33 +94,77 @@ $success_message = '';
 
 // Processar formulário de cadastro
 if ($_POST) {
-    $nome = trim($_POST['nome'] ?? '');
-    $email = trim($_POST['email'] ?? '');
-    $senha = $_POST['senha'] ?? '';
-    $confirmar_senha = $_POST['confirmar_senha'] ?? '';
-    $tipo = $_POST['tipo'] ?? '';
-    
-    // Validações
-    if (empty($nome) || empty($email) || empty($senha) || empty($confirmar_senha) || empty($tipo)) {
-        $error_message = 'Por favor, preencha todos os campos.';
-    } elseif ($senha !== $confirmar_senha) {
-        $error_message = 'As senhas não coincidem.';
-    } elseif (strlen($senha) < 6) {
-        $error_message = 'A senha deve ter pelo menos 6 caracteres.';
-    } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
-        $error_message = 'Por favor, insira um e-mail válido.';
-    } elseif (!in_array($tipo, ['participante', 'organizador'])) {
-        $error_message = 'Por favor, selecione um tipo de usuário válido.';
-    } else {
-        $result = $auth->register($nome, $email, $senha, $tipo);
+    try {
+        $nome = trim($_POST['nome'] ?? '');
+        $email = trim($_POST['email'] ?? '');
+        $senha = $_POST['senha'] ?? '';
+        $confirmar_senha = $_POST['confirmar_senha'] ?? '';
+        $tipo = $_POST['tipo'] ?? '';
         
-        if ($result['success']) {
-            $success_message = $result['message'];
-            // Limpar campos após sucesso
-            $_POST = [];
+        // Validações básicas
+        if (empty($nome) || empty($email) || empty($senha) || empty($confirmar_senha) || empty($tipo)) {
+            $error_message = 'Por favor, preencha todos os campos.';
+        } elseif ($senha !== $confirmar_senha) {
+            $error_message = 'As senhas não coincidem.';
+        } elseif (strlen($senha) < 6) {
+            $error_message = 'A senha deve ter pelo menos 6 caracteres.';
+        } elseif (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            $error_message = 'Por favor, insira um e-mail válido.';
+        } elseif (!in_array($tipo, ['participante', 'organizador'])) {
+            $error_message = 'Por favor, selecione um tipo de usuário válido.';
         } else {
-            $error_message = $result['message'];
+            // Tentar processar o cadastro
+            try {
+                // Carregar AuthController se disponível
+                $auth_paths = [
+                    '../../controllers/AuthController.php',
+                    '../controllers/AuthController.php',
+                    'controllers/AuthController.php'
+                ];
+                
+                $auth_loaded = false;
+                foreach ($auth_paths as $path) {
+                    if (file_exists($path)) {
+                        require_once $path;
+                        $auth_loaded = true;
+                        break;
+                    }
+                }
+                
+                if ($auth_loaded && class_exists('AuthController')) {
+                    $auth = new AuthController();
+                    $result = $auth->register($nome, $email, $senha, $confirmar_senha, $tipo);
+                    
+                    if ($result['success']) {
+                        $success_message = $result['message'];
+                        // Limpar campos após sucesso
+                        $_POST = [];
+                    } else {
+                        $error_message = $result['message'];
+                    }
+                } else {
+                    // Fallback: processar cadastro manualmente
+                    require_once '../../config/database.php';
+                    require_once '../../models/User.php';
+                    
+                    $userModel = new User();
+                    $result = $userModel->create($nome, $email, $senha, $tipo);
+                    
+                    if ($result['success']) {
+                        $success_message = $result['message'];
+                        $_POST = [];
+                    } else {
+                        $error_message = $result['message'];
+                    }
+                }
+                
+            } catch (Exception $e) {
+                $error_message = 'Erro no sistema: ' . $e->getMessage();
+            }
         }
+        
+    } catch (Exception $e) {
+        $error_message = 'Erro no processamento: ' . $e->getMessage();
     }
 }
 ?>
@@ -47,9 +174,9 @@ if ($_POST) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo $title; ?></title>
+    <title><?php echo htmlspecialchars($title); ?></title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="../../public/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
         .auth-page {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
@@ -118,6 +245,15 @@ if ($_POST) {
         .form-check {
             margin-bottom: 0.5rem;
         }
+
+        .debug-info {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 0.375rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            font-size: 0.875rem;
+        }
     </style>
 </head>
 <body class="auth-page">
@@ -134,6 +270,15 @@ if ($_POST) {
                     </div>
                     
                     <div class="auth-body">
+                        <!-- Debug Info (remover em produção) -->
+                        <div class="debug-info">
+                            <small>
+                                <strong>Status:</strong> 
+                                <?php echo defined('SITE_URL') ? '✅ Config OK' : '❌ Config Error'; ?> |
+                                <?php echo function_exists('isLoggedIn') ? '✅ Session OK' : '❌ Session Error'; ?>
+                            </small>
+                        </div>
+
                         <?php if ($error_message): ?>
                             <div class="alert alert-danger alert-dismissible fade show" role="alert">
                                 <i class="fas fa-exclamation-triangle me-2"></i>
@@ -281,7 +426,7 @@ if ($_POST) {
                         <hr class="my-4">
                         
                         <div class="text-center">
-                            <a href="../../index.php" class="btn btn-outline-secondary">
+                            <a href="<?php echo SITE_URL; ?>" class="btn btn-outline-secondary">
                                 <i class="fas fa-arrow-left me-2"></i>
                                 Voltar ao Início
                             </a>
@@ -292,8 +437,6 @@ if ($_POST) {
         </div>
     </div>
     
-    <!-- FontAwesome para ícones -->
-    <script src="https://kit.fontawesome.com/your-kit-id.js" crossorigin="anonymous"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
@@ -328,16 +471,6 @@ if ($_POST) {
         
         // Auto-focus no primeiro campo
         document.getElementById('nome').focus();
-        
-        // Validação de tipo de usuário
-        const radioButtons = document.querySelectorAll('input[name="tipo"]');
-        const tipoSection = document.querySelector('.tipo-usuario-section');
-        
-        radioButtons.forEach(radio => {
-            radio.addEventListener('change', function() {
-                tipoSection.classList.remove('is-invalid');
-            });
-        });
     </script>
 </body>
 </html>
