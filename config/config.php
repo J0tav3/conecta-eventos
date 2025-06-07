@@ -4,8 +4,8 @@ define('SITE_NAME', 'Conecta Eventos');
 
 // URL dinâmica baseada no ambiente
 if (isset($_ENV['RAILWAY_ENVIRONMENT'])) {
-    // Produção no Railway
-    define('SITE_URL', 'https://' . $_ENV['RAILWAY_STATIC_URL']);
+    // Produção no Railway - usar domínio fixo
+    define('SITE_URL', 'https://conecta-eventos-production.up.railway.app');
 } else {
     // Desenvolvimento local
     define('SITE_URL', 'http://localhost/conecta-eventos');
