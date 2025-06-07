@@ -33,8 +33,13 @@ class Event {
     public $data_atualizacao;
     
     public function __construct() {
-        $database = new Database();
-        $this->conn = $database->getConnection();
+        try {
+            $database = new Database();
+            $this->conn = $database->getConnection();
+        } catch (Exception $e) {
+            error_log("Erro no Event Model: " . $e->getMessage());
+            throw $e;
+        }
     }
     
     /**
@@ -298,6 +303,9 @@ class Event {
                 case 'preco_desc':
                     $orderBy = "e.preco DESC";
                     break;
+                case 'data_criacao':
+                    $orderBy = "e.data_criacao DESC";
+                    break;
             }
         }
         
@@ -367,6 +375,11 @@ class Event {
         if (!empty($filters['status'])) {
             $where[] = "status = ?";
             $params[] = $filters['status'];
+        }
+        
+        if (!empty($filters['categoria_id'])) {
+            $where[] = "id_categoria = ?";
+            $params[] = $filters['categoria_id'];
         }
         
         $query = "SELECT COUNT(*) as total FROM " . $this->table . " 
