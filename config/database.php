@@ -1,10 +1,5 @@
 <?php
-// ========================================
-// CONFIGURAÇÃO SQLITE TEMPORÁRIA
-// ========================================
-// Use apenas para teste rápido no Railway
-// Substitua config/database.php por este código temporariamente
-// ========================================
+// Configurações do banco de dados - Versão Railway Corrigida
 
 class Database {
     private $conn;
@@ -15,25 +10,43 @@ class Database {
         }
         
         try {
-            // Tentar MySQL primeiro (produção)
-            if (isset($_ENV['DATABASE_URL'])) {
+            // Tentar MySQL primeiro (produção Railway)
+            if (isset($_ENV['DATABASE_URL']) && !empty($_ENV['DATABASE_URL'])) {
                 $url = parse_url($_ENV['DATABASE_URL']);
+                
+                // Verificar se o parse foi bem-sucedido
+                if ($url === false) {
+                    throw new Exception("Erro ao fazer parse da DATABASE_URL");
+                }
+                
+                // Verificar componentes obrigatórios
+                if (!isset($url['host']) || !isset($url['user']) || !isset($url['path'])) {
+                    throw new Exception("DATABASE_URL incompleta - faltam host, user ou path");
+                }
                 
                 $host = $url['host'];
                 $dbname = ltrim($url['path'], '/');
                 $username = $url['user'];
-                $password = $url['pass'];
+                $password = $url['pass'] ?? '';
                 $port = $url['port'] ?? 3306;
                 
-                $dsn = "mysql:host=$host;port=$port;dbname=$dbname;charset=utf8mb4";
-                $this->conn = new PDO($dsn, $username, $password);
-                $this->conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
-                $this->conn->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE, PDO::FETCH_ASSOC);
+                // Log para debug (remover em produção)
+                error_log("Tentando conectar - Host: $host, DB: $dbname, User: $username, Port: $port");
                 
+                $dsn = "mysql:host=$host;port=$port;dbname=$dbname;charset=utf8mb4";
+                $this->conn = new PDO($dsn, $username, $password, [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    PDO::ATTR_EMULATE_PREPARES => false,
+                    PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4"
+                ]);
+                
+                error_log("Conexão MySQL estabelecida com sucesso");
                 return $this->conn;
             }
             
-            // Fallback para SQLite (temporário)
+            // Fallback para SQLite (desenvolvimento/teste)
+            error_log("DATABASE_URL não disponível, usando SQLite");
             $dbPath = __DIR__ . '/../temp_database.sqlite';
             $dsn = "sqlite:$dbPath";
             
@@ -44,11 +57,15 @@ class Database {
             // Criar tabelas se não existirem
             $this->createTables();
             
+            error_log("Conexão SQLite estabelecida com sucesso");
             return $this->conn;
             
         } catch(PDOException $e) {
-            error_log("Erro na conexão: " . $e->getMessage());
-            throw new Exception("Erro na conexão com o banco de dados");
+            error_log("Erro PDO na conexão: " . $e->getMessage());
+            throw new Exception("Erro na conexão com o banco de dados: " . $e->getMessage());
+        } catch(Exception $e) {
+            error_log("Erro geral na conexão: " . $e->getMessage());
+            throw new Exception("Erro na conexão com o banco de dados: " . $e->getMessage());
         }
     }
     
@@ -120,6 +137,29 @@ class Database {
             FOREIGN KEY (id_participante) REFERENCES usuarios(id_usuario),
             UNIQUE(id_evento, id_participante)
         );
+
+        CREATE TABLE IF NOT EXISTS favoritos (
+            id_favorito INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_usuario INTEGER NOT NULL,
+            id_evento INTEGER NOT NULL,
+            data_favoritado DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (id_usuario) REFERENCES usuarios(id_usuario),
+            FOREIGN KEY (id_evento) REFERENCES eventos(id_evento),
+            UNIQUE(id_usuario, id_evento)
+        );
+
+        CREATE TABLE IF NOT EXISTS notificacoes (
+            id_notificacao INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_usuario INTEGER NOT NULL,
+            titulo VARCHAR(100) NOT NULL,
+            mensagem TEXT NOT NULL,
+            tipo VARCHAR(20) DEFAULT 'sistema' CHECK (tipo IN ('sistema', 'evento', 'inscricao', 'avaliacao')),
+            lida BOOLEAN DEFAULT 0,
+            id_referencia INTEGER,
+            data_criacao DATETIME DEFAULT CURRENT_TIMESTAMP,
+            data_leitura DATETIME NULL,
+            FOREIGN KEY (id_usuario) REFERENCES usuarios(id_usuario)
+        );
         ";
         
         $this->conn->exec($sql);
@@ -129,57 +169,86 @@ class Database {
     }
     
     private function insertSampleData() {
-        // Verificar se já existe dados
-        $stmt = $this->conn->prepare("SELECT COUNT(*) as total FROM usuarios");
-        $stmt->execute();
-        $result = $stmt->fetch();
-        
-        if ($result['total'] > 0) {
-            return; // Dados já existem
+        try {
+            // Verificar se já existe dados
+            $stmt = $this->conn->prepare("SELECT COUNT(*) as total FROM usuarios");
+            $stmt->execute();
+            $result = $stmt->fetch();
+            
+            if ($result['total'] > 0) {
+                return; // Dados já existem
+            }
+            
+            // Inserir categorias
+            $categorias = "
+            INSERT INTO categorias (nome, descricao, cor, icone) VALUES
+            ('Tecnologia', 'Eventos relacionados à tecnologia', '#007bff', 'fa-laptop'),
+            ('Negócios', 'Eventos corporativos e de negócios', '#28a745', 'fa-briefcase'),
+            ('Educação', 'Eventos educacionais e de aprendizado', '#ffc107', 'fa-graduation-cap'),
+            ('Arte e Cultura', 'Eventos artísticos e culturais', '#e83e8c', 'fa-palette'),
+            ('Esportes', 'Eventos esportivos e atividades físicas', '#fd7e14', 'fa-running'),
+            ('Música', 'Shows, concertos e eventos musicais', '#6f42c1', 'fa-music');
+            ";
+            
+            $this->conn->exec($categorias);
+            
+            // Criar usuário admin
+            $adminPassword = password_hash('admin123', PASSWORD_DEFAULT);
+            $admin = "
+            INSERT INTO usuarios (nome, email, senha, tipo) VALUES
+            ('Administrador', 'admin@conectaeventos.com', '$adminPassword', 'organizador');
+            ";
+            
+            $this->conn->exec($admin);
+            
+            // Criar evento de exemplo
+            $evento = "
+            INSERT INTO eventos (
+                id_organizador, id_categoria, titulo, descricao,
+                data_inicio, data_fim, horario_inicio, horario_fim,
+                local_nome, local_endereco, local_cidade, local_estado,
+                preco, evento_gratuito, status
+            ) VALUES (
+                1, 1, 'Workshop de Desenvolvimento Web',
+                'Aprenda as últimas tecnologias em desenvolvimento web com especialistas da área.',
+                '" . date('Y-m-d', strtotime('+1 week')) . "',
+                '" . date('Y-m-d', strtotime('+1 week')) . "',
+                '09:00', '17:00',
+                'Centro de Convenções Tech', 'Rua da Tecnologia, 123',
+                'São Paulo', 'SP',
+                0.00, 1, 'publicado'
+            );
+            ";
+            
+            $this->conn->exec($evento);
+            
+            error_log("Dados de exemplo inseridos com sucesso");
+            
+        } catch (Exception $e) {
+            error_log("Erro ao inserir dados de exemplo: " . $e->getMessage());
         }
-        
-        // Inserir categorias
-        $categorias = "
-        INSERT INTO categorias (nome, descricao, cor, icone) VALUES
-        ('Tecnologia', 'Eventos relacionados à tecnologia', '#007bff', 'fa-laptop'),
-        ('Negócios', 'Eventos corporativos e de negócios', '#28a745', 'fa-briefcase'),
-        ('Educação', 'Eventos educacionais e de aprendizado', '#ffc107', 'fa-graduation-cap'),
-        ('Arte e Cultura', 'Eventos artísticos e culturais', '#e83e8c', 'fa-palette'),
-        ('Esportes', 'Eventos esportivos e atividades físicas', '#fd7e14', 'fa-running'),
-        ('Música', 'Shows, concertos e eventos musicais', '#6f42c1', 'fa-music');
-        ";
-        
-        $this->conn->exec($categorias);
-        
-        // Criar usuário admin
-        $adminPassword = password_hash('admin123', PASSWORD_DEFAULT);
-        $admin = "
-        INSERT INTO usuarios (nome, email, senha, tipo) VALUES
-        ('Administrador', 'admin@conectaeventos.com', '$adminPassword', 'organizador');
-        ";
-        
-        $this->conn->exec($admin);
-        
-        // Criar evento de exemplo
-        $evento = "
-        INSERT INTO eventos (
-            id_organizador, id_categoria, titulo, descricao,
-            data_inicio, data_fim, horario_inicio, horario_fim,
-            local_nome, local_endereco, local_cidade, local_estado,
-            preco, evento_gratuito, status
-        ) VALUES (
-            1, 1, 'Workshop de Desenvolvimento Web',
-            'Aprenda as últimas tecnologias em desenvolvimento web com especialistas da área.',
-            '" . date('Y-m-d', strtotime('+1 week')) . "',
-            '" . date('Y-m-d', strtotime('+1 week')) . "',
-            '09:00', '17:00',
-            'Centro de Convenções Tech', 'Rua da Tecnologia, 123',
-            'São Paulo', 'SP',
-            0.00, 1, 'publicado'
-        );
-        ";
-        
-        $this->conn->exec($evento);
     }
+}
+
+// Configurações antigas para compatibilidade (caso algum arquivo ainda use)
+if (isset($_ENV['DATABASE_URL'])) {
+    $url = parse_url($_ENV['DATABASE_URL']);
+    
+    if ($url && isset($url['host'])) {
+        define('DB_HOST', $url['host']);
+        define('DB_NAME', ltrim($url['path'] ?? '', '/'));
+        define('DB_USER', $url['user'] ?? '');
+        define('DB_PASS', $url['pass'] ?? '');
+        define('DB_PORT', $url['port'] ?? 3306);
+        define('DB_CHARSET', 'utf8mb4');
+    }
+} else {
+    // Configurações locais/SQLite
+    define('DB_HOST', 'localhost');
+    define('DB_NAME', 'conecta_eventos');
+    define('DB_USER', 'root');
+    define('DB_PASS', '');
+    define('DB_PORT', 3306);
+    define('DB_CHARSET', 'utf8mb4');
 }
 ?>

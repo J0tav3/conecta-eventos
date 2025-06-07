@@ -1,8 +1,6 @@
 <?php
 // ========================================
-// DIAGNÓSTICO COMPLETO - RAILWAY
-// ========================================
-// Salve como: diagnostic.php na raiz
+// DIAGNÓSTICO CORRIGIDO - RAILWAY
 // ========================================
 
 ini_set('display_errors', 1);
@@ -20,15 +18,35 @@ echo "Script Path: " . __DIR__ . "<br>";
 echo "Current User: " . get_current_user() . "<br>";
 echo "Working Directory: " . getcwd() . "<br>";
 
-// 2. VARIÁVEIS DE AMBIENTE
+// 2. VARIÁVEIS DE AMBIENTE MELHORADAS
 echo "<h2>2. Variáveis de Ambiente</h2>";
 echo "DATABASE_URL existe: " . (isset($_ENV['DATABASE_URL']) ? '✅ SIM' : '❌ NÃO') . "<br>";
+
 if (isset($_ENV['DATABASE_URL'])) {
+    echo "DATABASE_URL completa: " . $_ENV['DATABASE_URL'] . "<br>";
+    
     $dbUrl = parse_url($_ENV['DATABASE_URL']);
-    echo "DB Host: " . $dbUrl['host'] . "<br>";
-    echo "DB Name: " . ltrim($dbUrl['path'], '/') . "<br>";
-    echo "DB User: " . $dbUrl['user'] . "<br>";
-    echo "DB Port: " . ($dbUrl['port'] ?? 3306) . "<br>";
+    echo "Parse URL resultado:<br>";
+    echo "- Host: " . ($dbUrl['host'] ?? 'NÃO DEFINIDO') . "<br>";
+    echo "- Path: " . ($dbUrl['path'] ?? 'NÃO DEFINIDO') . "<br>";
+    echo "- User: " . ($dbUrl['user'] ?? 'NÃO DEFINIDO') . "<br>";
+    echo "- Port: " . ($dbUrl['port'] ?? 3306) . "<br>";
+    echo "- Scheme: " . ($dbUrl['scheme'] ?? 'NÃO DEFINIDO') . "<br>";
+    
+    if (isset($dbUrl['path'])) {
+        $dbName = ltrim($dbUrl['path'], '/');
+        echo "- DB Name: " . $dbName . "<br>";
+    }
+} else {
+    echo "❌ DATABASE_URL não encontrada<br>";
+}
+
+// Verificar todas as variáveis de ambiente
+echo "<h3>Outras variáveis Railway:</h3>";
+foreach ($_ENV as $key => $value) {
+    if (strpos($key, 'RAILWAY') !== false || strpos($key, 'DATABASE') !== false) {
+        echo "$key: " . substr($value, 0, 50) . "...<br>";
+    }
 }
 
 // 3. TESTE DE ARQUIVOS
@@ -46,14 +64,38 @@ $arquivos_criticos = [
 foreach ($arquivos_criticos as $arquivo) {
     $caminho = __DIR__ . '/' . $arquivo;
     if (file_exists($caminho)) {
-        echo "✅ $arquivo (". number_format(filesize($caminho)) ." bytes)<br>";
+        echo "✅ $arquivo (" . number_format(filesize($caminho)) . " bytes)<br>";
     } else {
         echo "❌ $arquivo (NÃO ENCONTRADO)<br>";
+        
+        // Verificar se o diretório existe
+        $dir = dirname($caminho);
+        if (!file_exists($dir)) {
+            echo "   📁 Diretório " . dirname($arquivo) . " não existe<br>";
+        }
     }
 }
 
-// 4. TESTE DE INCLUDES
-echo "<h2>4. Teste de Includes</h2>";
+// 4. CRIAR DIRETÓRIOS SE NECESSÁRIO
+echo "<h2>4. Criando Diretórios Necessários</h2>";
+$diretorios = ['models', 'public/uploads', 'public/uploads/eventos', 'backups', 'logs'];
+
+foreach ($diretorios as $dir) {
+    $caminho = __DIR__ . '/' . $dir;
+    if (!file_exists($caminho)) {
+        if (mkdir($caminho, 0755, true)) {
+            echo "✅ Diretório $dir criado<br>";
+            file_put_contents($caminho . '/.gitkeep', '');
+        } else {
+            echo "❌ Erro ao criar $dir<br>";
+        }
+    } else {
+        echo "✅ Diretório $dir já existe<br>";
+    }
+}
+
+// 5. TESTE DE INCLUDES
+echo "<h2>5. Teste de Includes</h2>";
 $includes_sucesso = [];
 $includes_erro = [];
 
@@ -91,8 +133,8 @@ try {
     $includes_erro[] = 'database.php';
 }
 
-// 5. TESTE DE CONEXÃO COM BANCO
-echo "<h2>5. Teste de Conexão com Banco</h2>";
+// 6. TESTE DE CONEXÃO COM BANCO
+echo "<h2>6. Teste de Conexão com Banco</h2>";
 if (in_array('database.php', $includes_sucesso)) {
     try {
         $database = new Database();
@@ -106,7 +148,11 @@ if (in_array('database.php', $includes_sucesso)) {
         echo "✅ Query de teste executada: " . $result['test'] . "<br>";
         
         // Verificar tabelas
-        $stmt = $conn->prepare("SHOW TABLES");
+        if (strpos($_ENV['DATABASE_URL'], 'mysql') !== false) {
+            $stmt = $conn->prepare("SHOW TABLES");
+        } else {
+            $stmt = $conn->prepare("SELECT name FROM sqlite_master WHERE type='table'");
+        }
         $stmt->execute();
         $tables = $stmt->fetchAll(PDO::FETCH_COLUMN);
         echo "📊 Tabelas encontradas: " . count($tables) . "<br>";
@@ -116,114 +162,45 @@ if (in_array('database.php', $includes_sucesso)) {
         
     } catch (Exception $e) {
         echo "❌ Erro na conexão: " . $e->getMessage() . "<br>";
+        echo "Stack trace: " . $e->getTraceAsString() . "<br>";
     }
 } else {
     echo "❌ Não foi possível testar conexão (database.php falhou)<br>";
 }
 
-// 6. TESTE DE SESSION
-echo "<h2>6. Teste de Sessão</h2>";
-try {
-    ob_start();
-    require_once 'includes/session.php';
-    $output = ob_get_clean();
-    if (empty($output)) {
-        echo "✅ includes/session.php carregado<br>";
-        echo "Session ID: " . session_id() . "<br>";
-        echo "Função isLoggedIn() existe: " . (function_exists('isLoggedIn') ? '✅' : '❌') . "<br>";
-        $includes_sucesso[] = 'session.php';
-    } else {
-        echo "⚠️ includes/session.php com output: " . htmlspecialchars($output) . "<br>";
-    }
-} catch (Exception $e) {
-    echo "❌ includes/session.php ERRO: " . $e->getMessage() . "<br>";
-    $includes_erro[] = 'session.php';
+// 7. INSTRUÇÕES PARA CRIAR MODELS
+if (!file_exists(__DIR__ . '/models/Event.php') || !file_exists(__DIR__ . '/models/User.php')) {
+    echo "<h2>7. ⚠️ AÇÃO NECESSÁRIA: Criar Models</h2>";
+    echo "<div style='background: #fff3cd; padding: 15px; border-left: 4px solid #ffc107;'>";
+    echo "<strong>Os arquivos models/Event.php e models/User.php não foram encontrados!</strong><br>";
+    echo "Você precisa criar estes arquivos com o conteúdo fornecido anteriormente.<br><br>";
+    
+    echo "<strong>Passos:</strong><br>";
+    echo "1. Crie o arquivo models/Event.php<br>";
+    echo "2. Crie o arquivo models/User.php<br>";
+    echo "3. Execute este diagnóstico novamente<br>";
+    echo "</div>";
 }
 
-// 7. TESTE DE CONTROLLERS
-echo "<h2>7. Teste de Controllers</h2>";
-if (in_array('session.php', $includes_sucesso)) {
-    try {
-        ob_start();
-        require_once 'controllers/EventController.php';
-        $output = ob_get_clean();
-        if (empty($output)) {
-            echo "✅ EventController carregado<br>";
-            $eventController = new EventController();
-            echo "✅ EventController instanciado<br>";
-            $includes_sucesso[] = 'EventController';
-        } else {
-            echo "⚠️ EventController com output: " . htmlspecialchars($output) . "<br>";
-        }
-    } catch (Exception $e) {
-        echo "❌ EventController ERRO: " . $e->getMessage() . "<br>";
-        $includes_erro[] = 'EventController';
-    }
-} else {
-    echo "❌ Não foi possível testar EventController (session.php falhou)<br>";
-}
-
-// 8. TESTE DE MODELS
-echo "<h2>8. Teste de Models</h2>";
-try {
-    ob_start();
-    require_once 'models/Event.php';
-    $output = ob_get_clean();
-    if (empty($output)) {
-        echo "✅ Model Event carregado<br>";
-        $includes_sucesso[] = 'Event.php';
-    } else {
-        echo "⚠️ Model Event com output: " . htmlspecialchars($output) . "<br>";
-    }
-} catch (Exception $e) {
-    echo "❌ Model Event ERRO: " . $e->getMessage() . "<br>";
-    $includes_erro[] = 'Event.php';
-}
-
-// 9. PERMISSÕES DE ARQUIVO
-echo "<h2>9. Permissões</h2>";
-$diretorios_check = ['public/uploads', 'backups', 'logs'];
-foreach ($diretorios_check as $dir) {
-    if (file_exists($dir)) {
-        echo "📁 $dir: " . (is_writable($dir) ? '✅ Gravável' : '❌ Não gravável') . "<br>";
-    } else {
-        echo "📁 $dir: ❌ Não existe<br>";
-        if (mkdir($dir, 0755, true)) {
-            echo "   ✅ Criado com sucesso<br>";
-        } else {
-            echo "   ❌ Erro ao criar<br>";
-        }
-    }
-}
-
-// 10. RESUMO
-echo "<h2>10. Resumo</h2>";
+// 8. RESUMO E PRÓXIMAS AÇÕES
+echo "<h2>8. Resumo</h2>";
 echo "<strong>✅ Includes com sucesso:</strong> " . implode(', ', $includes_sucesso) . "<br>";
 if (!empty($includes_erro)) {
     echo "<strong>❌ Includes com erro:</strong> " . implode(', ', $includes_erro) . "<br>";
 }
 
-echo "<br><strong>Próximos passos recomendados:</strong><br>";
-if (empty($includes_erro)) {
-    echo "🎉 Todos os components básicos funcionando! Pode usar o index.php completo.<br>";
+echo "<br><strong>Status geral:</strong><br>";
+if (isset($_ENV['DATABASE_URL']) && in_array('database.php', $includes_sucesso)) {
+    if (file_exists(__DIR__ . '/models/Event.php') && file_exists(__DIR__ . '/models/User.php')) {
+        echo "🎉 Sistema quase pronto! Apenas teste a conexão com banco.<br>";
+    } else {
+        echo "🔧 Crie os arquivos models/Event.php e models/User.php<br>";
+    }
 } else {
-    echo "🔧 Corrigir os erros listados acima antes de prosseguir.<br>";
+    echo "🔧 Corrija os problemas de configuração listados acima.<br>";
 }
 
 echo "</div>";
-
-// 11. TESTE PRÁTICO
-echo "<h2>11. Teste Prático</h2>";
-if (in_array('EventController', $includes_sucesso)) {
-    try {
-        echo "Testando busca de eventos...<br>";
-        $eventos = $eventController->getPublicEvents(['limite' => 1]);
-        echo "✅ Busca de eventos funcionando (" . count($eventos) . " eventos encontrados)<br>";
-    } catch (Exception $e) {
-        echo "❌ Erro na busca de eventos: " . $e->getMessage() . "<br>";
-    }
-}
-
 echo "<hr>";
 echo "<p><strong>Data/Hora do teste:</strong> " . date('Y-m-d H:i:s') . "</p>";
 ?>
