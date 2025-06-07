@@ -571,7 +571,7 @@ $cidadesPopulares = array_slice(array_keys($cidades), 0, 8);
         </section>
     <?php endif; ?>
 
-    <!-- Eventos em Destaque -->
+<!-- Eventos em Destaque -->
     <?php if (!empty($eventosDestaque)): ?>
         <section class="py-5">
             <div class="container">
@@ -595,6 +595,54 @@ $cidadesPopulares = array_slice(array_keys($cidades), 0, 8);
                                         <div class="event-image-placeholder">
                                             <i class="fas fa-calendar-alt fa-3x"></i>
                                         </div>
+                                    <?php endif; ?>
+                                    
+                                    <!-- Category Badge -->
+                                    <?php if (!empty($evento['nome_categoria'])): ?>
+                                        <span class="badge bg-primary category-badge">
+                                            <?php echo htmlspecialchars($evento['nome_categoria']); ?>
+                                        </span>
+                                    <?php endif; ?>
+                                    
+                                    <!-- Price Badge -->
+                                    <span class="badge bg-<?php echo $evento['evento_gratuito'] ? 'success' : 'warning'; ?> price-badge">
+                                        <?php echo $evento['preco_formatado']; ?>
+                                    </span>
+                                </div>
+                                
+                                <div class="card-body d-flex flex-column">
+                                    <h5 class="card-title">
+                                        <?php echo htmlspecialchars($evento['titulo']); ?>
+                                        <?php if ($evento['destaque']): ?>
+                                            <i class="fas fa-star text-warning ms-1" title="Evento em destaque"></i>
+                                        <?php endif; ?>
+                                    </h5>
+                                    
+                                    <p class="card-text text-muted flex-grow-1">
+                                        <?php echo htmlspecialchars(substr($evento['descricao'], 0, 120)); ?>...
+                                    </p>
+                                    
+                                    <div class="event-meta mb-3">
+                                        <small class="text-muted d-block">
+                                            <i class="fas fa-calendar me-1"></i>
+                                            <?php echo $evento['data_inicio_formatada']; ?>
+                                        </small>
+                                        <small class="text-muted d-block">
+                                            <i class="fas fa-clock me-1"></i>
+                                            <?php echo $evento['horario_inicio_formatado']; ?>
+                                        </small>
+                                        <small class="text-muted d-block">
+                                            <i class="fas fa-map-marker-alt me-1"></i>
+                                            <?php echo htmlspecialchars($evento['local_cidade']); ?>
+                                        </small>
+                                        <small class="text-muted d-block">
+                                            <i class="fas fa-users me-1"></i>
+                                            <?php echo $evento['total_inscritos'] ?? 0; ?> inscritos
+                                            <?php if ($evento['capacidade_maxima']): ?>
+                                                / <?php echo $evento['capacidade_maxima']; ?>
+                                            <?php endif; ?>
+                                        </small>
+                                    </div>
                                     
                                     <div class="mt-auto">
                                         <a href="views/events/view.php?id=<?php echo $evento['id_evento']; ?>" 
