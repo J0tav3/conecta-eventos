@@ -1,92 +1,77 @@
 <?php
 // ========================================
-// REGISTER.PHP - VERSÃO CORRIGIDA
+// REGISTER.PHP - VERSÃO CORRIGIDA RAILWAY
 // ========================================
 // Local: views/auth/register.php
 // ========================================
 
-// Ativar exibição de erros apenas em desenvolvimento
-error_reporting(E_ALL);
-ini_set('display_errors', 1);
+// Desabilitar exibição de erros em produção
+error_reporting(0);
+ini_set('display_errors', 0);
 
-try {
-    // Tentar carregar configurações
-    $config_loaded = false;
-    $possible_paths = [
-        '../../config/config.php',
-        '../config/config.php',
-        'config/config.php'
+// Iniciar sessão primeiro
+if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+}
+
+// Definir constantes se não existirem
+if (!defined('SITE_URL')) {
+    define('SITE_URL', 'https://conecta-eventos-production.up.railway.app');
+}
+if (!defined('SITE_NAME')) {
+    define('SITE_NAME', 'Conecta Eventos');
+}
+
+// Função para buscar arquivos em múltiplos caminhos
+function findFile($relativePath) {
+    $possiblePaths = [
+        __DIR__ . '/../../' . $relativePath,
+        __DIR__ . '/../' . $relativePath,
+        __DIR__ . '/' . $relativePath,
+        dirname(dirname(__DIR__)) . '/' . $relativePath,
+        dirname(__DIR__) . '/' . $relativePath
     ];
     
-    foreach ($possible_paths as $path) {
+    foreach ($possiblePaths as $path) {
         if (file_exists($path)) {
-            require_once $path;
-            $config_loaded = true;
-            break;
+            return $path;
         }
     }
-    
-    if (!$config_loaded) {
-        // Definir constantes manualmente se não carregou
-        if (!defined('SITE_URL')) {
-            define('SITE_URL', 'https://conecta-eventos-production.up.railway.app');
-        }
-        if (!defined('SITE_NAME')) {
-            define('SITE_NAME', 'Conecta Eventos');
-        }
-    }
-    
-    // Carregar sistema de sessão
-    $session_loaded = false;
-    $session_paths = [
-        '../../includes/session.php',
-        '../includes/session.php',
-        'includes/session.php'
-    ];
-    
-    foreach ($session_paths as $path) {
-        if (file_exists($path)) {
-            require_once $path;
-            $session_loaded = true;
-            break;
-        }
-    }
-    
-    // Fallback para funções básicas de sessão
-    if (!$session_loaded) {
-        if (session_status() == PHP_SESSION_NONE) {
-            session_start();
-        }
-        
-        function isLoggedIn() {
-            return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
-        }
-        
-        function requireGuest() {
-            if (isLoggedIn()) {
-                $redirect_url = isset($_SESSION['user_type']) && $_SESSION['user_type'] === 'organizador' 
-                    ? SITE_URL . '/views/dashboard/organizer.php'
-                    : SITE_URL . '/views/dashboard/participant.php';
-                header('Location: ' . $redirect_url);
-                exit();
-            }
-        }
-    }
-    
-    // Redirecionar se já estiver logado
-    if (function_exists('requireGuest')) {
-        requireGuest();
-    }
+    return false;
+}
 
-} catch (Exception $e) {
-    // Em caso de erro crítico, continuar com valores padrão
-    if (!defined('SITE_URL')) {
-        define('SITE_URL', 'https://conecta-eventos-production.up.railway.app');
-    }
-    if (!defined('SITE_NAME')) {
-        define('SITE_NAME', 'Conecta Eventos');
+// Carregar arquivos necessários com fallback
+$configFile = findFile('config/config.php');
+if ($configFile) {
+    require_once $configFile;
+}
+
+$databaseFile = findFile('config/database.php');
+if ($databaseFile) {
+    require_once $databaseFile;
+}
+
+// Funções de sessão com fallback
+if (!function_exists('isLoggedIn')) {
+    function isLoggedIn() {
+        return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
     }
 }
+
+if (!function_exists('requireGuest')) {
+    function requireGuest() {
+        if (isLoggedIn()) {
+            $redirect_url = isset($_SESSION['user_type']) && $_SESSION['user_type'] === 'organizador' 
+                ? SITE_URL . '/views/dashboard/organizer.php'
+                : SITE_URL . '/views/dashboard/participant.php';
+            header('Location: ' . $redirect_url);
+            exit();
+        }
+    }
+}
+
+// Redirecionar se já estiver logado
+requireGuest();
 
 $title = "Cadastro - " . SITE_NAME;
 $error_message = '';
@@ -115,56 +100,42 @@ if ($_POST) {
         } else {
             // Tentar processar o cadastro
             try {
-                // Carregar AuthController se disponível
-                $auth_paths = [
-                    '../../controllers/AuthController.php',
-                    '../controllers/AuthController.php',
-                    'controllers/AuthController.php'
-                ];
-                
-                $auth_loaded = false;
-                foreach ($auth_paths as $path) {
-                    if (file_exists($path)) {
-                        require_once $path;
-                        $auth_loaded = true;
-                        break;
-                    }
-                }
-                
-                if ($auth_loaded && class_exists('AuthController')) {
-                    $auth = new AuthController();
-                    $result = $auth->register($nome, $email, $senha, $confirmar_senha, $tipo);
+                // Tentar usar Database class se disponível
+                if (class_exists('Database')) {
+                    $database = new Database();
+                    $conn = $database->getConnection();
                     
-                    if ($result['success']) {
-                        $success_message = $result['message'];
-                        // Limpar campos após sucesso
-                        $_POST = [];
+                    // Verificar se email já existe
+                    $stmt = $conn->prepare("SELECT id_usuario FROM usuarios WHERE email = ?");
+                    $stmt->execute([$email]);
+                    
+                    if ($stmt->rowCount() > 0) {
+                        $error_message = 'Este e-mail já está cadastrado no sistema.';
                     } else {
-                        $error_message = $result['message'];
+                        // Criar usuário
+                        $senha_hash = password_hash($senha, PASSWORD_DEFAULT);
+                        $stmt = $conn->prepare("INSERT INTO usuarios (nome, email, senha, tipo) VALUES (?, ?, ?, ?)");
+                        
+                        if ($stmt->execute([$nome, $email, $senha_hash, $tipo])) {
+                            $success_message = 'Usuário cadastrado com sucesso! Faça login para continuar.';
+                            // Limpar campos após sucesso
+                            $_POST = [];
+                        } else {
+                            $error_message = 'Erro ao cadastrar usuário. Tente novamente.';
+                        }
                     }
                 } else {
-                    // Fallback: processar cadastro manualmente
-                    require_once '../../config/database.php';
-                    require_once '../../models/User.php';
-                    
-                    $userModel = new User();
-                    $result = $userModel->create($nome, $email, $senha, $tipo);
-                    
-                    if ($result['success']) {
-                        $success_message = $result['message'];
-                        $_POST = [];
-                    } else {
-                        $error_message = $result['message'];
-                    }
+                    // Fallback se Database class não estiver disponível
+                    $error_message = 'Sistema temporariamente indisponível. Tente novamente mais tarde.';
                 }
                 
             } catch (Exception $e) {
-                $error_message = 'Erro no sistema: ' . $e->getMessage();
+                $error_message = 'Erro no sistema. Tente novamente mais tarde.';
             }
         }
         
     } catch (Exception $e) {
-        $error_message = 'Erro no processamento: ' . $e->getMessage();
+        $error_message = 'Erro no processamento. Tente novamente.';
     }
 }
 ?>
@@ -246,11 +217,11 @@ if ($_POST) {
             margin-bottom: 0.5rem;
         }
 
-        .debug-info {
-            background: #f8f9fa;
-            border: 1px solid #dee2e6;
+        .system-status {
+            background: #e3f2fd;
+            border: 1px solid #2196f3;
             border-radius: 0.375rem;
-            padding: 1rem;
+            padding: 0.75rem;
             margin-bottom: 1rem;
             font-size: 0.875rem;
         }
@@ -270,12 +241,13 @@ if ($_POST) {
                     </div>
                     
                     <div class="auth-body">
-                        <!-- Debug Info (remover em produção) -->
-                        <div class="debug-info">
+                        <!-- Status do Sistema -->
+                        <div class="system-status">
+                            <i class="fas fa-info-circle me-2"></i>
                             <small>
-                                <strong>Status:</strong> 
-                                <?php echo defined('SITE_URL') ? '✅ Config OK' : '❌ Config Error'; ?> |
-                                <?php echo function_exists('isLoggedIn') ? '✅ Session OK' : '❌ Session Error'; ?>
+                                <strong>Sistema:</strong> Online | 
+                                <strong>Banco:</strong> <?php echo class_exists('Database') ? 'Conectado' : 'Verificando...'; ?> |
+                                <strong>Sessão:</strong> Ativa
                             </small>
                         </div>
 
@@ -471,6 +443,24 @@ if ($_POST) {
         
         // Auto-focus no primeiro campo
         document.getElementById('nome').focus();
+        
+        // Auto-hide alerts
+        setTimeout(function() {
+            const alerts = document.querySelectorAll('.alert');
+            alerts.forEach(alert => {
+                if (alert.classList.contains('alert-dismissible')) {
+                    const bsAlert = new bootstrap.Alert(alert);
+                    bsAlert.close();
+                }
+            });
+        }, 10000);
+
+        // Debug info no console
+        console.log('🔧 Conecta Eventos - Register Debug');
+        console.log('📍 URL:', window.location.href);
+        console.log('🌐 SITE_URL:', '<?php echo SITE_URL; ?>');
+        console.log('💾 Database Class:', <?php echo class_exists('Database') ? 'true' : 'false'; ?>);
+        console.log('📁 Session Active:', <?php echo session_status() === PHP_SESSION_ACTIVE ? 'true' : 'false'; ?>);
     </script>
 </body>
 </html>
