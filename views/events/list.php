@@ -1,63 +1,128 @@
 <?php
-require_once '../../config/config.php';
-require_once '../../includes/session.php';
-require_once '../../controllers/EventController.php';
+// ==========================================
+// MEUS EVENTOS
+// Local: views/events/list.php
+// ==========================================
 
-// Verificar se usuário está logado e é organizador
-requireLogin();
-if (!isOrganizer()) {
-    header('Location: ' . SITE_URL . '/index.php');
-    exit();
+session_start();
+
+// Verificar se está logado e é organizador
+if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
+    header("Location: ../auth/login.php");
+    exit;
 }
 
-$title = "Meus Eventos - " . SITE_NAME;
-$eventController = new EventController();
-
-// Processar filtros
-$filters = [];
-if (!empty($_GET['status'])) {
-    $filters['status'] = $_GET['status'];
-}
-if (!empty($_GET['busca'])) {
-    $filters['busca'] = $_GET['busca'];
+if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'organizador') {
+    header("Location: ../dashboard/participant.php");
+    exit;
 }
 
-// Paginação
-$page = isset($_GET['page']) ? (int)$_GET['page'] : 1;
-$perPage = 10;
+$title = "Meus Eventos - Conecta Eventos";
+$userName = $_SESSION['user_name'] ?? 'Organizador';
 
-$pagination = $eventController->paginate($filters, $page, $perPage);
-$eventos = $pagination['items'];
+// URLs
+$dashboardUrl = '../dashboard/organizer.php';
+$homeUrl = '../../index.php';
+$createEventUrl = 'create.php';
 
-// Processar ações
-if ($_POST) {
-    $action = $_POST['action'] ?? '';
-    $eventId = $_POST['event_id'] ?? '';
-    
-    switch ($action) {
-        case 'delete':
-            $result = $eventController->delete($eventId);
-            setFlashMessage($result['message'], $result['success'] ? 'success' : 'danger');
-            header('Location: ' . $_SERVER['PHP_SELF']);
-            exit();
-            break;
-            
-        case 'change_status':
-            $newStatus = $_POST['status'] ?? '';
-            $result = $eventController->changeStatus($eventId, $newStatus);
-            setFlashMessage($result['message'], $result['success'] ? 'success' : 'danger');
-            header('Location: ' . $_SERVER['PHP_SELF']);
-            exit();
-            break;
-            
-        case 'duplicate':
-            $result = $eventController->duplicate($eventId);
-            setFlashMessage($result['message'], $result['success'] ? 'success' : 'danger');
-            header('Location: ' . $_SERVER['PHP_SELF']);
-            exit();
-            break;
-    }
+// Filtros
+$status_filter = $_GET['status'] ?? '';
+$categoria_filter = $_GET['categoria'] ?? '';
+
+// Dados de exemplo dos eventos do organizador
+$meus_eventos = [
+    [
+        'id_evento' => 1,
+        'titulo' => 'Workshop de Desenvolvimento Web',
+        'categoria' => 'Tecnologia',
+        'data_inicio' => '2024-06-15',
+        'horario_inicio' => '14:00',
+        'local_cidade' => 'São Paulo',
+        'status' => 'publicado',
+        'participantes' => 45,
+        'max_participantes' => 100,
+        'evento_gratuito' => true,
+        'preco' => 0,
+        'created_at' => '2024-05-20'
+    ],
+    [
+        'id_evento' => 2,
+        'titulo' => 'Palestra sobre IA e Machine Learning',
+        'categoria' => 'Tecnologia',
+        'data_inicio' => '2024-06-20',
+        'horario_inicio' => '19:00',
+        'local_cidade' => 'Rio de Janeiro',
+        'status' => 'publicado',
+        'participantes' => 32,
+        'max_participantes' => 200,
+        'evento_gratuito' => false,
+        'preco' => 50.00,
+        'created_at' => '2024-05-22'
+    ],
+    [
+        'id_evento' => 3,
+        'titulo' => 'Meetup de Empreendedorismo Digital',
+        'categoria' => 'Negócios',
+        'data_inicio' => '2024-06-25',
+        'horario_inicio' => '18:30',
+        'local_cidade' => 'Belo Horizonte',
+        'status' => 'rascunho',
+        'participantes' => 0,
+        'max_participantes' => 50,
+        'evento_gratuito' => true,
+        'preco' => 0,
+        'created_at' => '2024-05-25'
+    ],
+    [
+        'id_evento' => 4,
+        'titulo' => 'Curso de Design UX/UI',
+        'categoria' => 'Design',
+        'data_inicio' => '2024-07-01',
+        'horario_inicio' => '09:00',
+        'local_cidade' => 'São Paulo',
+        'status' => 'publicado',
+        'participantes' => 28,
+        'max_participantes' => 80,
+        'evento_gratuito' => false,
+        'preco' => 150.00,
+        'created_at' => '2024-05-28'
+    ],
+    [
+        'id_evento' => 5,
+        'titulo' => 'Workshop de Marketing Digital',
+        'categoria' => 'Marketing',
+        'data_inicio' => '2024-07-10',
+        'horario_inicio' => '15:00',
+        'local_cidade' => 'Porto Alegre',
+        'status' => 'cancelado',
+        'participantes' => 12,
+        'max_participantes' => 60,
+        'evento_gratuito' => true,
+        'preco' => 0,
+        'created_at' => '2024-06-01'
+    ]
+];
+
+// Aplicar filtros
+$eventos_filtrados = $meus_eventos;
+
+if (!empty($status_filter)) {
+    $eventos_filtrados = array_filter($eventos_filtrados, function($evento) use ($status_filter) {
+        return $evento['status'] === $status_filter;
+    });
 }
+
+if (!empty($categoria_filter)) {
+    $eventos_filtrados = array_filter($eventos_filtrados, function($evento) use ($categoria_filter) {
+        return $evento['categoria'] === $categoria_filter;
+    });
+}
+
+// Estatísticas
+$total_eventos = count($meus_eventos);
+$eventos_publicados = count(array_filter($meus_eventos, function($e) { return $e['status'] === 'publicado'; }));
+$eventos_rascunho = count(array_filter($meus_eventos, function($e) { return $e['status'] === 'rascunho'; }));
+$total_participantes = array_sum(array_column($meus_eventos, 'participantes'));
 ?>
 
 <!DOCTYPE html>
@@ -66,305 +131,386 @@ if ($_POST) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo $title; ?></title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
-    <link rel="stylesheet" href="../../public/css/style.css">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <style>
+        body {
+            background-color: #f8f9fa;
+        }
+        
+        .page-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 2rem 0;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background: white;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            margin-bottom: 1rem;
+            border-left: 4px solid;
+        }
+        
+        .stat-card.primary { border-left-color: #667eea; }
+        .stat-card.success { border-left-color: #28a745; }
+        .stat-card.warning { border-left-color: #ffc107; }
+        .stat-card.info { border-left-color: #17a2b8; }
+        
         .event-card {
-            border-left: 4px solid #007bff;
+            background: white;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            margin-bottom: 1rem;
             transition: all 0.3s ease;
         }
+        
         .event-card:hover {
             transform: translateY(-2px);
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
         }
+        
         .status-badge {
-            font-size: 0.75rem;
+            padding: 0.5rem 1rem;
+            border-radius: 2rem;
+            font-size: 0.875rem;
+            font-weight: 600;
         }
-        .event-image {
-            width: 100px;
-            height: 70px;
-            object-fit: cover;
-            border-radius: 0.375rem;
+        
+        .status-publicado { 
+            background-color: #d4edda; 
+            color: #155724; 
         }
-        .no-image {
-            width: 100px;
-            height: 70px;
-            background: #f8f9fa;
-            border-radius: 0.375rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: #6c757d;
+        
+        .status-rascunho { 
+            background-color: #fff3cd; 
+            color: #856404; 
+        }
+        
+        .status-cancelado { 
+            background-color: #f8d7da; 
+            color: #721c24; 
+        }
+        
+        .filters-card {
+            background: white;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            margin-bottom: 2rem;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border: none;
+        }
+        
+        .progress-bar-custom {
+            background: linear-gradient(135deg, #28a745, #20c997);
         }
     </style>
 </head>
 <body>
-    <?php include '../../views/layouts/header.php'; ?>
-
-    <div class="container my-4">
-        <!-- Cabeçalho -->
-        <div class="row mb-4">
-            <div class="col-md-8">
-                <h2><i class="fas fa-calendar-alt me-2"></i>Meus Eventos</h2>
-                <p class="text-muted">Gerencie todos os seus eventos em um só lugar</p>
+    <!-- Header -->
+    <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container">
+            <a class="navbar-brand" href="<?php echo $homeUrl; ?>">
+                <i class="fas fa-calendar-check me-2"></i>
+                <strong>Conecta Eventos</strong>
+            </a>
+            
+            <div class="navbar-nav ms-auto">
+                <span class="navbar-text me-3">
+                    Olá, <?php echo htmlspecialchars($userName); ?>!
+                </span>
+                <a class="nav-link" href="<?php echo $dashboardUrl; ?>">Dashboard</a>
+                <a class="nav-link" href="../../logout.php">Sair</a>
             </div>
-            <div class="col-md-4 text-end">
-                <a href="create.php" class="btn btn-primary">
-                    <i class="fas fa-plus me-2"></i>Novo Evento
-                </a>
+        </div>
+    </nav>
+
+    <!-- Breadcrumb -->
+    <div class="container mt-3">
+        <nav aria-label="breadcrumb">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item">
+                    <a href="<?php echo $dashboardUrl; ?>" class="text-decoration-none">
+                        <i class="fas fa-tachometer-alt me-1"></i>Dashboard
+                    </a>
+                </li>
+                <li class="breadcrumb-item active" aria-current="page">Meus Eventos</li>
+            </ol>
+        </nav>
+    </div>
+
+    <!-- Header da Página -->
+    <section class="page-header">
+        <div class="container">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <h1><i class="fas fa-list me-2"></i>Meus Eventos</h1>
+                    <p class="mb-0 fs-5">Gerencie todos os seus eventos em um só lugar</p>
+                </div>
+                <div class="col-md-4 text-md-end">
+                    <a href="<?php echo $createEventUrl; ?>" class="btn btn-light btn-lg">
+                        <i class="fas fa-plus me-2"></i>Novo Evento
+                    </a>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <div class="container pb-5">
+        <!-- Estatísticas Rápidas -->
+        <div class="row mb-4">
+            <div class="col-md-3">
+                <div class="stat-card primary">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h3 class="mb-0 text-primary"><?php echo $total_eventos; ?></h3>
+                            <small class="text-muted">Total de Eventos</small>
+                        </div>
+                        <i class="fas fa-calendar fa-2x text-primary"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-3">
+                <div class="stat-card success">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h3 class="mb-0 text-success"><?php echo $eventos_publicados; ?></h3>
+                            <small class="text-muted">Publicados</small>
+                        </div>
+                        <i class="fas fa-check-circle fa-2x text-success"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-3">
+                <div class="stat-card warning">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h3 class="mb-0 text-warning"><?php echo $eventos_rascunho; ?></h3>
+                            <small class="text-muted">Rascunhos</small>
+                        </div>
+                        <i class="fas fa-edit fa-2x text-warning"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-md-3">
+                <div class="stat-card info">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <h3 class="mb-0 text-info"><?php echo $total_participantes; ?></h3>
+                            <small class="text-muted">Total Participantes</small>
+                        </div>
+                        <i class="fas fa-users fa-2x text-info"></i>
+                    </div>
+                </div>
             </div>
         </div>
 
-        <!-- Mensagens Flash -->
-        <?php showFlashMessage(); ?>
-
         <!-- Filtros -->
-        <div class="card mb-4">
-            <div class="card-body">
-                <form method="GET" class="row g-3">
-                    <div class="col-md-4">
-                        <label for="busca" class="form-label">Buscar</label>
-                        <input type="text" 
-                               class="form-control" 
-                               id="busca" 
-                               name="busca" 
-                               placeholder="Título ou descrição..."
-                               value="<?php echo htmlspecialchars($_GET['busca'] ?? ''); ?>">
-                    </div>
-                    <div class="col-md-3">
-                        <label for="status" class="form-label">Status</label>
-                        <select class="form-select" id="status" name="status">
-                            <option value="">Todos</option>
-                            <option value="rascunho" <?php echo ($_GET['status'] ?? '') === 'rascunho' ? 'selected' : ''; ?>>Rascunho</option>
-                            <option value="publicado" <?php echo ($_GET['status'] ?? '') === 'publicado' ? 'selected' : ''; ?>>Publicado</option>
-                            <option value="cancelado" <?php echo ($_GET['status'] ?? '') === 'cancelado' ? 'selected' : ''; ?>>Cancelado</option>
-                            <option value="finalizado" <?php echo ($_GET['status'] ?? '') === 'finalizado' ? 'selected' : ''; ?>>Finalizado</option>
-                        </select>
-                    </div>
-                    <div class="col-md-3 d-flex align-items-end">
-                        <button type="submit" class="btn btn-outline-primary me-2">
-                            <i class="fas fa-search me-1"></i>Filtrar
-                        </button>
-                        <a href="list.php" class="btn btn-outline-secondary">
-                            <i class="fas fa-times me-1"></i>Limpar
-                        </a>
-                    </div>
-                </form>
+        <div class="filters-card">
+            <div class="row align-items-center">
+                <div class="col-md-8">
+                    <form method="GET" class="row g-3">
+                        <div class="col-md-4">
+                            <select class="form-select" name="status">
+                                <option value="">Todos os Status</option>
+                                <option value="publicado" <?php echo $status_filter === 'publicado' ? 'selected' : ''; ?>>Publicado</option>
+                                <option value="rascunho" <?php echo $status_filter === 'rascunho' ? 'selected' : ''; ?>>Rascunho</option>
+                                <option value="cancelado" <?php echo $status_filter === 'cancelado' ? 'selected' : ''; ?>>Cancelado</option>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <select class="form-select" name="categoria">
+                                <option value="">Todas as Categorias</option>
+                                <option value="Tecnologia" <?php echo $categoria_filter === 'Tecnologia' ? 'selected' : ''; ?>>Tecnologia</option>
+                                <option value="Negócios" <?php echo $categoria_filter === 'Negócios' ? 'selected' : ''; ?>>Negócios</option>
+                                <option value="Marketing" <?php echo $categoria_filter === 'Marketing' ? 'selected' : ''; ?>>Marketing</option>
+                                <option value="Design" <?php echo $categoria_filter === 'Design' ? 'selected' : ''; ?>>Design</option>
+                            </select>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <button type="submit" class="btn btn-primary me-2">
+                                <i class="fas fa-filter me-1"></i>Filtrar
+                            </button>
+                            <a href="list.php" class="btn btn-outline-secondary">
+                                <i class="fas fa-times me-1"></i>Limpar
+                            </a>
+                        </div>
+                    </form>
+                </div>
+                
+                <div class="col-md-4 text-md-end">
+                    <span class="text-muted">
+                        <i class="fas fa-list me-1"></i>
+                        <?php echo count($eventos_filtrados); ?> eventos encontrados
+                    </span>
+                </div>
             </div>
         </div>
 
         <!-- Lista de Eventos -->
-        <?php if (empty($eventos)): ?>
+        <?php if (empty($eventos_filtrados)): ?>
             <div class="text-center py-5">
-                <i class="fas fa-calendar-times fa-4x text-muted mb-3"></i>
+                <i class="fas fa-calendar-times fa-4x text-muted mb-4"></i>
                 <h4>Nenhum evento encontrado</h4>
-                <p class="text-muted">Comece criando seu primeiro evento!</p>
-                <a href="create.php" class="btn btn-primary">
+                <p class="text-muted mb-4">
+                    <?php if (!empty($status_filter) || !empty($categoria_filter)): ?>
+                        Tente ajustar os filtros ou criar um novo evento.
+                    <?php else: ?>
+                        Você ainda não criou nenhum evento. Que tal começar agora?
+                    <?php endif; ?>
+                </p>
+                <a href="<?php echo $createEventUrl; ?>" class="btn btn-primary btn-lg">
                     <i class="fas fa-plus me-2"></i>Criar Primeiro Evento
                 </a>
             </div>
         <?php else: ?>
-            <div class="row">
-                <?php foreach ($eventos as $evento): ?>
-                    <?php $evento = $eventController->formatEventForDisplay($evento); ?>
-                    <div class="col-12 mb-3">
-                        <div class="card event-card">
-                            <div class="card-body">
-                                <div class="row align-items-center">
-                                    <!-- Imagem -->
-                                    <div class="col-auto">
-                                        <?php if (!empty($evento['imagem_capa'])): ?>
-                                            <img src="<?php echo $evento['imagem_url']; ?>" 
-                                                 alt="<?php echo htmlspecialchars($evento['titulo']); ?>"
-                                                 class="event-image">
-                                        <?php else: ?>
-                                            <div class="no-image">
-                                                <i class="fas fa-image fa-2x"></i>
-                                            </div>
-                                        <?php endif; ?>
+            <?php foreach ($eventos_filtrados as $evento): ?>
+                <div class="event-card">
+                    <div class="row align-items-center">
+                        <div class="col-md-6">
+                            <div class="d-flex align-items-start mb-2">
+                                <div class="flex-grow-1">
+                                    <h5 class="mb-1"><?php echo htmlspecialchars($evento['titulo']); ?></h5>
+                                    <div class="mb-2">
+                                        <span class="badge bg-primary me-2"><?php echo $evento['categoria']; ?></span>
+                                        <span class="status-badge status-<?php echo $evento['status']; ?>">
+                                            <?php echo ucfirst($evento['status']); ?>
+                                        </span>
                                     </div>
-                                    
-                                    <!-- Informações -->
-                                    <div class="col">
-                                        <div class="row">
-                                            <div class="col-md-8">
-                                                <h5 class="card-title mb-1">
-                                                    <?php echo htmlspecialchars($evento['titulo']); ?>
-                                                    <?php if ($evento['destaque']): ?>
-                                                        <i class="fas fa-star text-warning ms-1" title="Evento em destaque"></i>
-                                                    <?php endif; ?>
-                                                </h5>
-                                                <p class="card-text text-muted mb-2">
-                                                    <i class="fas fa-map-marker-alt me-1"></i>
-                                                    <?php echo htmlspecialchars($evento['local_cidade']); ?>
-                                                    
-                                                    <i class="fas fa-calendar ms-3 me-1"></i>
-                                                    <?php echo $evento['data_inicio_formatada']; ?>
-                                                    
-                                                    <i class="fas fa-clock ms-3 me-1"></i>
-                                                    <?php echo $evento['horario_inicio_formatado']; ?>
-                                                </p>
-                                                <p class="card-text mb-0">
-                                                    <?php echo substr(htmlspecialchars($evento['descricao']), 0, 100); ?>...
-                                                </p>
-                                            </div>
-                                            <div class="col-md-4 text-end">
-                                                <!-- Status -->
-                                                <?php
-                                                $statusClass = [
-                                                    'rascunho' => 'bg-secondary',
-                                                    'publicado' => 'bg-success',
-                                                    'cancelado' => 'bg-danger',
-                                                    'finalizado' => 'bg-dark'
-                                                ];
-                                                ?>
-                                                <span class="badge <?php echo $statusClass[$evento['status']] ?? 'bg-secondary'; ?> status-badge mb-2">
-                                                    <?php echo $evento['status_nome']; ?>
-                                                </span>
-                                                
-                                                <!-- Estatísticas -->
-                                                <div class="small text-muted mb-2">
-                                                    <i class="fas fa-users me-1"></i>
-                                                    <?php echo $evento['total_inscritos'] ?? 0; ?> inscritos
-                                                    
-                                                    <?php if ($evento['capacidade_maxima']): ?>
-                                                        / <?php echo $evento['capacidade_maxima']; ?>
-                                                    <?php endif; ?>
-                                                </div>
-                                                
-                                                <div class="small text-muted mb-3">
-                                                    <strong><?php echo $evento['preco_formatado']; ?></strong>
-                                                </div>
-                                                
-                                                <!-- Ações -->
-                                                <div class="btn-group" role="group">
-                                                    <a href="view.php?id=<?php echo $evento['id_evento']; ?>" 
-                                                       class="btn btn-sm btn-outline-info" 
-                                                       title="Visualizar">
-                                                        <i class="fas fa-eye"></i>
-                                                    </a>
-                                                    <a href="edit.php?id=<?php echo $evento['id_evento']; ?>" 
-                                                       class="btn btn-sm btn-outline-primary" 
-                                                       title="Editar">
-                                                        <i class="fas fa-edit"></i>
-                                                    </a>
-                                                    <button type="button" 
-                                                            class="btn btn-sm btn-outline-secondary dropdown-toggle" 
-                                                            data-bs-toggle="dropdown" 
-                                                            title="Mais ações">
-                                                        <i class="fas fa-ellipsis-v"></i>
-                                                    </button>
-                                                    <ul class="dropdown-menu">
-                                                        <?php if ($evento['status'] === 'rascunho'): ?>
-                                                            <li>
-                                                                <form method="POST" style="display: inline;">
-                                                                    <input type="hidden" name="action" value="change_status">
-                                                                    <input type="hidden" name="event_id" value="<?php echo $evento['id_evento']; ?>">
-                                                                    <input type="hidden" name="status" value="publicado">
-                                                                    <button type="submit" class="dropdown-item">
-                                                                        <i class="fas fa-paper-plane me-2"></i>Publicar
-                                                                    </button>
-                                                                </form>
-                                                            </li>
-                                                        <?php endif; ?>
-                                                        
-                                                        <?php if ($evento['status'] === 'publicado'): ?>
-                                                            <li>
-                                                                <form method="POST" style="display: inline;">
-                                                                    <input type="hidden" name="action" value="change_status">
-                                                                    <input type="hidden" name="event_id" value="<?php echo $evento['id_evento']; ?>">
-                                                                    <input type="hidden" name="status" value="cancelado">
-                                                                    <button type="submit" class="dropdown-item">
-                                                                        <i class="fas fa-ban me-2"></i>Cancelar
-                                                                    </button>
-                                                                </form>
-                                                            </li>
-                                                        <?php endif; ?>
-                                                        
-                                                        <li>
-                                                            <form method="POST" style="display: inline;">
-                                                                <input type="hidden" name="action" value="duplicate">
-                                                                <input type="hidden" name="event_id" value="<?php echo $evento['id_evento']; ?>">
-                                                                <button type="submit" class="dropdown-item">
-                                                                    <i class="fas fa-copy me-2"></i>Duplicar
-                                                                </button>
-                                                            </form>
-                                                        </li>
-                                                        
-                                                        <li><hr class="dropdown-divider"></li>
-                                                        
-                                                        <li>
-                                                            <form method="POST" style="display: inline;" 
-                                                                  onsubmit="return confirm('Tem certeza que deseja excluir este evento?')">
-                                                                <input type="hidden" name="action" value="delete">
-                                                                <input type="hidden" name="event_id" value="<?php echo $evento['id_evento']; ?>">
-                                                                <button type="submit" class="dropdown-item text-danger">
-                                                                    <i class="fas fa-trash me-2"></i>Excluir
-                                                                </button>
-                                                            </form>
-                                                        </li>
-                                                    </ul>
-                                                </div>
-                                            </div>
-                                        </div>
+                                    <div class="text-muted">
+                                        <small>
+                                            <i class="fas fa-calendar me-1"></i>
+                                            <?php echo date('d/m/Y', strtotime($evento['data_inicio'])); ?> às 
+                                            <?php echo date('H:i', strtotime($evento['horario_inicio'])); ?>
+                                        </small>
+                                        <br>
+                                        <small>
+                                            <i class="fas fa-map-marker-alt me-1"></i>
+                                            <?php echo $evento['local_cidade']; ?>
+                                        </small>
                                     </div>
                                 </div>
                             </div>
                         </div>
+                        
+                        <div class="col-md-3">
+                            <div class="text-center">
+                                <h6>Participantes</h6>
+                                <div class="progress mb-2">
+                                    <div class="progress-bar progress-bar-custom" 
+                                         style="width: <?php echo ($evento['participantes'] / $evento['max_participantes']) * 100; ?>%">
+                                    </div>
+                                </div>
+                                <small class="text-muted">
+                                    <?php echo $evento['participantes']; ?> / <?php echo $evento['max_participantes']; ?>
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-2 text-center">
+                            <strong class="<?php echo $evento['evento_gratuito'] ? 'text-success' : 'text-primary'; ?>">
+                                <?php echo $evento['evento_gratuito'] ? 'Gratuito' : 'R$ ' . number_format($evento['preco'], 2, ',', '.'); ?>
+                            </strong>
+                        </div>
+                        
+                        <div class="col-md-1">
+                            <div class="dropdown">
+                                <button class="btn btn-outline-primary btn-sm dropdown-toggle" 
+                                        type="button" data-bs-toggle="dropdown">
+                                    <i class="fas fa-cog"></i>
+                                </button>
+                                <ul class="dropdown-menu">
+                                    <li>
+                                        <a class="dropdown-item" href="view.php?id=<?php echo $evento['id_evento']; ?>">
+                                            <i class="fas fa-eye me-2"></i>Visualizar
+                                        </a>
+                                    </li>
+                                    <li>
+                                        <a class="dropdown-item" href="edit.php?id=<?php echo $evento['id_evento']; ?>">
+                                            <i class="fas fa-edit me-2"></i>Editar
+                                        </a>
+                                    </li>
+                                    <li>
+                                        <a class="dropdown-item" href="participants.php?id=<?php echo $evento['id_evento']; ?>">
+                                            <i class="fas fa-users me-2"></i>Participantes
+                                        </a>
+                                    </li>
+                                    <li><hr class="dropdown-divider"></li>
+                                    <?php if ($evento['status'] === 'rascunho'): ?>
+                                        <li>
+                                            <a class="dropdown-item text-success" href="publish.php?id=<?php echo $evento['id_evento']; ?>">
+                                                <i class="fas fa-check me-2"></i>Publicar
+                                            </a>
+                                        </li>
+                                    <?php endif; ?>
+                                    <?php if ($evento['status'] === 'publicado'): ?>
+                                        <li>
+                                            <a class="dropdown-item text-warning" href="unpublish.php?id=<?php echo $evento['id_evento']; ?>">
+                                                <i class="fas fa-pause me-2"></i>Despublicar
+                                            </a>
+                                        </li>
+                                    <?php endif; ?>
+                                    <li>
+                                        <a class="dropdown-item text-danger" 
+                                           href="delete.php?id=<?php echo $evento['id_evento']; ?>"
+                                           onclick="return confirm('Tem certeza que deseja excluir este evento?')">
+                                            <i class="fas fa-trash me-2"></i>Excluir
+                                        </a>
+                                    </li>
+                                </ul>
+                            </div>
+                        </div>
                     </div>
-                <?php endforeach; ?>
-            </div>
-
-            <!-- Paginação -->
-            <?php if ($pagination['total_pages'] > 1): ?>
-                <nav aria-label="Paginação de eventos">
-                    <ul class="pagination justify-content-center">
-                        <?php if ($pagination['has_prev']): ?>
-                            <li class="page-item">
-                                <a class="page-link" href="?page=<?php echo $pagination['page'] - 1; ?>&<?php echo http_build_query($_GET); ?>">
-                                    <i class="fas fa-chevron-left"></i>
-                                </a>
-                            </li>
-                        <?php endif; ?>
-                        
-                        <?php for ($i = 1; $i <= $pagination['total_pages']; $i++): ?>
-                            <li class="page-item <?php echo $i === $pagination['page'] ? 'active' : ''; ?>">
-                                <a class="page-link" href="?page=<?php echo $i; ?>&<?php echo http_build_query($_GET); ?>">
-                                    <?php echo $i; ?>
-                                </a>
-                            </li>
-                        <?php endfor; ?>
-                        
-                        <?php if ($pagination['has_next']): ?>
-                            <li class="page-item">
-                                <a class="page-link" href="?page=<?php echo $pagination['page'] + 1; ?>&<?php echo http_build_query($_GET); ?>">
-                                    <i class="fas fa-chevron-right"></i>
-                                </a>
-                            </li>
-                        <?php endif; ?>
-                    </ul>
-                </nav>
-                
-                <div class="text-center text-muted">
-                    Mostrando <?php echo count($eventos); ?> de <?php echo $pagination['total']; ?> eventos
                 </div>
-            <?php endif; ?>
+            <?php endforeach; ?>
         <?php endif; ?>
     </div>
 
-    <?php include '../../views/layouts/footer.php'; ?>
-
-    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
     <script>
-        // Auto-hide alerts
-        setTimeout(function() {
-            const alerts = document.querySelectorAll('.alert');
-            alerts.forEach(alert => {
-                const bsAlert = new bootstrap.Alert(alert);
-                bsAlert.close();
+        document.addEventListener('DOMContentLoaded', function() {
+            // Animação das estatísticas
+            const statNumbers = document.querySelectorAll('.stat-card h3');
+            statNumbers.forEach(stat => {
+                const target = parseInt(stat.textContent);
+                let current = 0;
+                const increment = target / 30;
+                const timer = setInterval(() => {
+                    current += increment;
+                    if (current >= target) {
+                        stat.textContent = target;
+                        clearInterval(timer);
+                    } else {
+                        stat.textContent = Math.floor(current);
+                    }
+                }, 50);
             });
-        }, 5000);
+
+            // Hover effects nos cards
+            const eventCards = document.querySelectorAll('.event-card');
+            eventCards.forEach(card => {
+                card.addEventListener('mouseenter', function() {
+                    this.style.transform = 'translateY(-2px)';
+                });
+                card.addEventListener('mouseleave', function() {
+                    this.style.transform = 'translateY(0)';
+                });
+            });
+        });
     </script>
 </body>
 </html>

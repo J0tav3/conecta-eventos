@@ -229,11 +229,11 @@ $atividades_recentes = [
         <nav>
             <ul class="sidebar-nav px-3">
                 <li><a href="#" class="active"><i class="fas fa-tachometer-alt me-2"></i>Dashboard</a></li>
-                <li><a href="#"><i class="fas fa-calendar-plus me-2"></i>Criar Evento</a></li>
-                <li><a href="#"><i class="fas fa-list me-2"></i>Meus Eventos</a></li>
-                <li><a href="#"><i class="fas fa-users me-2"></i>Participantes</a></li>
-                <li><a href="#"><i class="fas fa-chart-bar me-2"></i>Relatórios</a></li>
-                <li><a href="#"><i class="fas fa-cog me-2"></i>Configurações</a></li>
+                <li><a href="../events/create.php"><i class="fas fa-calendar-plus me-2"></i>Criar Evento</a></li>
+                <li><a href="../events/list.php"><i class="fas fa-list me-2"></i>Meus Eventos</a></li>
+                <li><a href="participants.php"><i class="fas fa-users me-2"></i>Participantes</a></li>
+                <li><a href="reports.php"><i class="fas fa-chart-bar me-2"></i>Relatórios</a></li>
+                <li><a href="settings.php"><i class="fas fa-cog me-2"></i>Configurações</a></li>
             </ul>
         </nav>
 
@@ -258,7 +258,7 @@ $atividades_recentes = [
                 <p class="text-muted mb-0">Bem-vindo de volta, <?php echo htmlspecialchars($userName); ?>!</p>
             </div>
             <div>
-                <button class="btn btn-primary">
+                <button class="btn btn-primary" onclick="window.location.href='../events/create.php'">
                     <i class="fas fa-plus me-2"></i>Novo Evento
                 </button>
             </div>
@@ -399,22 +399,22 @@ $atividades_recentes = [
                     <div class="card-body">
                         <div class="row">
                             <div class="col-md-3 mb-2">
-                                <button class="btn btn-primary w-100">
+                                <button class="btn btn-primary w-100" onclick="window.location.href='../events/create.php'">
                                     <i class="fas fa-plus me-2"></i>Criar Evento
                                 </button>
                             </div>
                             <div class="col-md-3 mb-2">
-                                <button class="btn btn-success w-100">
-                                    <i class="fas fa-bullhorn me-2"></i>Promover Evento
+                                <button class="btn btn-success w-100" onclick="window.location.href='../events/list.php'">
+                                    <i class="fas fa-bullhorn me-2"></i>Meus Eventos
                                 </button>
                             </div>
                             <div class="col-md-3 mb-2">
-                                <button class="btn btn-info w-100">
+                                <button class="btn btn-info w-100" onclick="window.location.href='reports.php'">
                                     <i class="fas fa-chart-line me-2"></i>Ver Relatórios
                                 </button>
                             </div>
                             <div class="col-md-3 mb-2">
-                                <button class="btn btn-warning w-100">
+                                <button class="btn btn-warning w-100" onclick="window.location.href='settings.php'">
                                     <i class="fas fa-cog me-2"></i>Configurações
                                 </button>
                             </div>
