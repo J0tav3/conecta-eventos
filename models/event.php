@@ -1,14 +1,15 @@
 <?php
-require_once __DIR__ . '/../config/database.php';
+// ==========================================
+// EVENT MODEL
+// Local: models/Event.php
+// ==========================================
 
 class Event {
     private $conn;
-    private $table = 'eventos';
-    
+    private $table_name = "eventos";
+
     // Propriedades do evento
     public $id_evento;
-    public $id_organizador;
-    public $id_categoria;
     public $titulo;
     public $descricao;
     public $data_inicio;
@@ -20,546 +21,353 @@ class Event {
     public $local_cidade;
     public $local_estado;
     public $local_cep;
-    public $capacidade_maxima;
-    public $preco;
     public $evento_gratuito;
-    public $imagem_capa;
-    public $link_externo;
-    public $requisitos;
-    public $informacoes_adicionais;
+    public $preco;
+    public $max_participantes;
+    public $categoria_id;
+    public $organizador_id;
     public $status;
-    public $destaque;
-    public $data_criacao;
-    public $data_atualizacao;
-    
-    public function __construct() {
+    public $imagem_capa;
+    public $created_at;
+    public $updated_at;
+
+    public function __construct($db = null) {
+        if ($db) {
+            $this->conn = $db;
+        }
+    }
+
+    // Buscar todos os eventos públicos
+    public function getPublicEvents($limit = null, $offset = 0, $filters = []) {
         try {
-            $database = new Database();
-            $this->conn = $database->getConnection();
+            $query = "SELECT 
+                        e.*,
+                        c.nome as nome_categoria,
+                        u.nome as nome_organizador,
+                        COUNT(i.id_inscricao) as total_inscritos
+                     FROM " . $this->table_name . " e
+                     LEFT JOIN categorias c ON e.categoria_id = c.id_categoria
+                     LEFT JOIN usuarios u ON e.organizador_id = u.id_usuario
+                     LEFT JOIN inscricoes i ON e.id_evento = i.evento_id
+                     WHERE e.status = 'publicado'
+                     AND e.data_inicio >= CURDATE()";
+
+            // Aplicar filtros
+            if (!empty($filters['categoria_id'])) {
+                $query .= " AND e.categoria_id = :categoria_id";
+            }
+            
+            if (!empty($filters['cidade'])) {
+                $query .= " AND e.local_cidade LIKE :cidade";
+            }
+            
+            if (!empty($filters['busca'])) {
+                $query .= " AND (e.titulo LIKE :busca OR e.descricao LIKE :busca)";
+            }
+            
+            if (isset($filters['gratuito'])) {
+                $query .= " AND e.evento_gratuito = :gratuito";
+            }
+
+            $query .= " GROUP BY e.id_evento";
+            $query .= " ORDER BY e.data_inicio ASC";
+
+            if ($limit) {
+                $query .= " LIMIT :limit OFFSET :offset";
+            }
+
+            $stmt = $this->conn->prepare($query);
+
+            // Bind dos filtros
+            if (!empty($filters['categoria_id'])) {
+                $stmt->bindParam(':categoria_id', $filters['categoria_id']);
+            }
+            
+            if (!empty($filters['cidade'])) {
+                $cidade_param = '%' . $filters['cidade'] . '%';
+                $stmt->bindParam(':cidade', $cidade_param);
+            }
+            
+            if (!empty($filters['busca'])) {
+                $busca_param = '%' . $filters['busca'] . '%';
+                $stmt->bindParam(':busca', $busca_param);
+            }
+            
+            if (isset($filters['gratuito'])) {
+                $stmt->bindParam(':gratuito', $filters['gratuito'], PDO::PARAM_BOOL);
+            }
+
+            if ($limit) {
+                $stmt->bindParam(':limit', $limit, PDO::PARAM_INT);
+                $stmt->bindParam(':offset', $offset, PDO::PARAM_INT);
+            }
+
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+
         } catch (Exception $e) {
-            error_log("Erro no Event Model: " . $e->getMessage());
-            throw $e;
+            error_log("Erro ao buscar eventos: " . $e->getMessage());
+            return [];
         }
     }
-    
-    /**
-     * Criar novo evento
-     */
-    public function create($data) {
-        // Validar dados
-        $validation = $this->validateEventData($data);
-        if (!$validation['success']) {
-            return $validation;
-        }
-        
-        // Preparar query
-        $query = "INSERT INTO " . $this->table . " (
-            id_organizador, id_categoria, titulo, descricao,
-            data_inicio, data_fim, horario_inicio, horario_fim,
-            local_nome, local_endereco, local_cidade, local_estado, local_cep,
-            capacidade_maxima, preco, evento_gratuito, imagem_capa,
-            link_externo, requisitos, informacoes_adicionais, status, destaque
-        ) VALUES (
-            ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-        )";
-        
-        $stmt = $this->conn->prepare($query);
-        
+
+    // Buscar evento por ID
+    public function getEventById($id) {
         try {
-            $result = $stmt->execute([
-                $data['id_organizador'],
-                $data['id_categoria'] ?? null,
-                $data['titulo'],
-                $data['descricao'],
-                $data['data_inicio'],
-                $data['data_fim'],
-                $data['horario_inicio'],
-                $data['horario_fim'],
-                $data['local_nome'],
-                $data['local_endereco'],
-                $data['local_cidade'],
-                $data['local_estado'],
-                $data['local_cep'] ?? null,
-                $data['capacidade_maxima'] ?? null,
-                $data['preco'] ?? 0.00,
-                $data['evento_gratuito'] ?? true,
-                $data['imagem_capa'] ?? null,
-                $data['link_externo'] ?? null,
-                $data['requisitos'] ?? null,
-                $data['informacoes_adicionais'] ?? null,
-                $data['status'] ?? 'rascunho',
-                $data['destaque'] ?? false
-            ]);
-            
-            if ($result) {
-                return [
-                    'success' => true,
-                    'message' => 'Evento criado com sucesso!',
-                    'event_id' => $this->conn->lastInsertId()
-                ];
-            }
-        } catch (PDOException $e) {
-            return [
-                'success' => false,
-                'message' => 'Erro ao criar evento: ' . $e->getMessage()
-            ];
+            $query = "SELECT 
+                        e.*,
+                        c.nome as nome_categoria,
+                        u.nome as nome_organizador,
+                        u.email as email_organizador,
+                        COUNT(i.id_inscricao) as total_inscritos
+                     FROM " . $this->table_name . " e
+                     LEFT JOIN categorias c ON e.categoria_id = c.id_categoria
+                     LEFT JOIN usuarios u ON e.organizador_id = u.id_usuario
+                     LEFT JOIN inscricoes i ON e.id_evento = i.evento_id
+                     WHERE e.id_evento = :id
+                     GROUP BY e.id_evento";
+
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(':id', $id);
+            $stmt->execute();
+
+            return $stmt->fetch(PDO::FETCH_ASSOC);
+
+        } catch (Exception $e) {
+            error_log("Erro ao buscar evento: " . $e->getMessage());
+            return false;
         }
-        
-        return ['success' => false, 'message' => 'Erro desconhecido ao criar evento.'];
     }
-    
-    /**
-     * Buscar evento por ID
-     */
-    public function findById($id) {
-        $query = "SELECT e.*, 
-                         u.nome AS nome_organizador,
-                         u.email AS email_organizador,
-                         c.nome AS nome_categoria,
-                         c.cor AS cor_categoria,
-                         c.icone AS icone_categoria,
-                         (SELECT COUNT(*) FROM inscricoes i 
-                          WHERE i.id_evento = e.id_evento AND i.status = 'confirmada') AS total_inscritos
-                  FROM " . $this->table . " e
-                  LEFT JOIN usuarios u ON e.id_organizador = u.id_usuario
-                  LEFT JOIN categorias c ON e.id_categoria = c.id_categoria
-                  WHERE e.id_evento = ?";
-        
-        $stmt = $this->conn->prepare($query);
-        $stmt->execute([$id]);
-        
-        if ($stmt->rowCount() > 0) {
-            return $stmt->fetch();
-        }
-        
-        return false;
-    }
-    
-    /**
-     * Atualizar evento
-     */
-    public function update($id, $data) {
-        // Verificar se o evento existe
-        if (!$this->findById($id)) {
-            return ['success' => false, 'message' => 'Evento não encontrado.'];
-        }
-        
-        // Validar dados
-        $validation = $this->validateEventData($data);
-        if (!$validation['success']) {
-            return $validation;
-        }
-        
-        $query = "UPDATE " . $this->table . " SET 
-                  id_categoria = ?, titulo = ?, descricao = ?,
-                  data_inicio = ?, data_fim = ?, horario_inicio = ?, horario_fim = ?,
-                  local_nome = ?, local_endereco = ?, local_cidade = ?, local_estado = ?, local_cep = ?,
-                  capacidade_maxima = ?, preco = ?, evento_gratuito = ?, imagem_capa = ?,
-                  link_externo = ?, requisitos = ?, informacoes_adicionais = ?, status = ?, destaque = ?
-                  WHERE id_evento = ?";
-        
-        $stmt = $this->conn->prepare($query);
-        
+
+    // Buscar eventos por organizador
+    public function getEventsByOrganizer($organizador_id, $limit = null) {
         try {
-            $result = $stmt->execute([
-                $data['id_categoria'] ?? null,
-                $data['titulo'],
-                $data['descricao'],
-                $data['data_inicio'],
-                $data['data_fim'],
-                $data['horario_inicio'],
-                $data['horario_fim'],
-                $data['local_nome'],
-                $data['local_endereco'],
-                $data['local_cidade'],
-                $data['local_estado'],
-                $data['local_cep'] ?? null,
-                $data['capacidade_maxima'] ?? null,
-                $data['preco'] ?? 0.00,
-                $data['evento_gratuito'] ?? true,
-                $data['imagem_capa'] ?? null,
-                $data['link_externo'] ?? null,
-                $data['requisitos'] ?? null,
-                $data['informacoes_adicionais'] ?? null,
-                $data['status'] ?? 'rascunho',
-                $data['destaque'] ?? false,
-                $id
-            ]);
-            
-            if ($result) {
-                return [
-                    'success' => true,
-                    'message' => 'Evento atualizado com sucesso!'
-                ];
+            $query = "SELECT 
+                        e.*,
+                        c.nome as nome_categoria,
+                        COUNT(i.id_inscricao) as total_inscritos
+                     FROM " . $this->table_name . " e
+                     LEFT JOIN categorias c ON e.categoria_id = c.id_categoria
+                     LEFT JOIN inscricoes i ON e.id_evento = i.evento_id
+                     WHERE e.organizador_id = :organizador_id
+                     GROUP BY e.id_evento
+                     ORDER BY e.created_at DESC";
+
+            if ($limit) {
+                $query .= " LIMIT :limit";
             }
-        } catch (PDOException $e) {
-            return [
-                'success' => false,
-                'message' => 'Erro ao atualizar evento: ' . $e->getMessage()
-            ];
+
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(':organizador_id', $organizador_id);
+            
+            if ($limit) {
+                $stmt->bindParam(':limit', $limit, PDO::PARAM_INT);
+            }
+
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        } catch (Exception $e) {
+            error_log("Erro ao buscar eventos do organizador: " . $e->getMessage());
+            return [];
         }
-        
-        return ['success' => false, 'message' => 'Erro desconhecido ao atualizar evento.'];
     }
-    
-    /**
-     * Excluir evento
-     */
-    public function delete($id, $organizador_id) {
-        // Verificar se o evento existe e pertence ao organizador
-        $evento = $this->findById($id);
-        if (!$evento) {
-            return ['success' => false, 'message' => 'Evento não encontrado.'];
-        }
-        
-        if ($evento['id_organizador'] != $organizador_id) {
-            return ['success' => false, 'message' => 'Você não tem permissão para excluir este evento.'];
-        }
-        
-        $query = "DELETE FROM " . $this->table . " WHERE id_evento = ?";
-        $stmt = $this->conn->prepare($query);
-        
+
+    // Criar novo evento
+    public function create() {
         try {
-            $result = $stmt->execute([$id]);
-            
-            if ($result) {
-                return [
-                    'success' => true,
-                    'message' => 'Evento excluído com sucesso!'
-                ];
+            $query = "INSERT INTO " . $this->table_name . "
+                     (titulo, descricao, data_inicio, data_fim, horario_inicio, horario_fim,
+                      local_nome, local_endereco, local_cidade, local_estado, local_cep,
+                      evento_gratuito, preco, max_participantes, categoria_id, organizador_id,
+                      status, imagem_capa)
+                     VALUES
+                     (:titulo, :descricao, :data_inicio, :data_fim, :horario_inicio, :horario_fim,
+                      :local_nome, :local_endereco, :local_cidade, :local_estado, :local_cep,
+                      :evento_gratuito, :preco, :max_participantes, :categoria_id, :organizador_id,
+                      :status, :imagem_capa)";
+
+            $stmt = $this->conn->prepare($query);
+
+            // Bind dos parâmetros
+            $stmt->bindParam(':titulo', $this->titulo);
+            $stmt->bindParam(':descricao', $this->descricao);
+            $stmt->bindParam(':data_inicio', $this->data_inicio);
+            $stmt->bindParam(':data_fim', $this->data_fim);
+            $stmt->bindParam(':horario_inicio', $this->horario_inicio);
+            $stmt->bindParam(':horario_fim', $this->horario_fim);
+            $stmt->bindParam(':local_nome', $this->local_nome);
+            $stmt->bindParam(':local_endereco', $this->local_endereco);
+            $stmt->bindParam(':local_cidade', $this->local_cidade);
+            $stmt->bindParam(':local_estado', $this->local_estado);
+            $stmt->bindParam(':local_cep', $this->local_cep);
+            $stmt->bindParam(':evento_gratuito', $this->evento_gratuito);
+            $stmt->bindParam(':preco', $this->preco);
+            $stmt->bindParam(':max_participantes', $this->max_participantes);
+            $stmt->bindParam(':categoria_id', $this->categoria_id);
+            $stmt->bindParam(':organizador_id', $this->organizador_id);
+            $stmt->bindParam(':status', $this->status);
+            $stmt->bindParam(':imagem_capa', $this->imagem_capa);
+
+            if ($stmt->execute()) {
+                $this->id_evento = $this->conn->lastInsertId();
+                return true;
             }
-        } catch (PDOException $e) {
-            return [
-                'success' => false,
-                'message' => 'Erro ao excluir evento: ' . $e->getMessage()
-            ];
+
+            return false;
+
+        } catch (Exception $e) {
+            error_log("Erro ao criar evento: " . $e->getMessage());
+            return false;
         }
-        
-        return ['success' => false, 'message' => 'Erro desconhecido ao excluir evento.'];
     }
-    
-    /**
-     * Listar eventos com filtros
-     */
-    public function list($filters = []) {
-        $where = ['1=1']; // Base condition
-        $params = [];
-        
-        // Aplicar filtros
-        if (!empty($filters['organizador_id'])) {
-            $where[] = "e.id_organizador = ?";
-            $params[] = $filters['organizador_id'];
-        }
-        
-        if (!empty($filters['categoria_id'])) {
-            $where[] = "e.id_categoria = ?";
-            $params[] = $filters['categoria_id'];
-        }
-        
-        if (!empty($filters['status'])) {
-            $where[] = "e.status = ?";
-            $params[] = $filters['status'];
-        }
-        
-        if (!empty($filters['cidade'])) {
-            $where[] = "e.local_cidade LIKE ?";
-            $params[] = "%{$filters['cidade']}%";
-        }
-        
-        if (!empty($filters['busca'])) {
-            $where[] = "(e.titulo LIKE ? OR e.descricao LIKE ?)";
-            $params[] = "%{$filters['busca']}%";
-            $params[] = "%{$filters['busca']}%";
-        }
-        
-        if (isset($filters['gratuito'])) {
-            $where[] = "e.evento_gratuito = ?";
-            $params[] = $filters['gratuito'] ? 1 : 0;
-        }
-        
-        if (!empty($filters['data_inicio'])) {
-            $where[] = "e.data_inicio >= ?";
-            $params[] = $filters['data_inicio'];
-        }
-        
-        if (!empty($filters['data_fim'])) {
-            $where[] = "e.data_inicio <= ?";
-            $params[] = $filters['data_fim'];
-        }
-        
-        // Ordenação
-        $orderBy = "e.data_inicio ASC";
-        if (!empty($filters['ordem'])) {
-            switch ($filters['ordem']) {
-                case 'data_desc':
-                    $orderBy = "e.data_inicio DESC";
-                    break;
-                case 'titulo':
-                    $orderBy = "e.titulo ASC";
-                    break;
-                case 'preco_asc':
-                    $orderBy = "e.preco ASC";
-                    break;
-                case 'preco_desc':
-                    $orderBy = "e.preco DESC";
-                    break;
-                case 'data_criacao':
-                    $orderBy = "e.data_criacao DESC";
-                    break;
-            }
-        }
-        
-        // Paginação
-        $limit = "";
-        if (!empty($filters['limite'])) {
-            $limit = "LIMIT " . intval($filters['limite']);
-            if (!empty($filters['offset'])) {
-                $limit .= " OFFSET " . intval($filters['offset']);
-            }
-        }
-        
-        $query = "SELECT e.*, 
-                         u.nome AS nome_organizador,
-                         c.nome AS nome_categoria,
-                         c.cor AS cor_categoria,
-                         c.icone AS icone_categoria,
-                         (SELECT COUNT(*) FROM inscricoes i 
-                          WHERE i.id_evento = e.id_evento AND i.status = 'confirmada') AS total_inscritos,
-                         CASE 
-                            WHEN e.capacidade_maxima IS NOT NULL THEN 
-                                e.capacidade_maxima - (SELECT COUNT(*) FROM inscricoes i WHERE i.id_evento = e.id_evento AND i.status = 'confirmada')
-                            ELSE NULL 
-                         END AS vagas_restantes
-                  FROM " . $this->table . " e
-                  LEFT JOIN usuarios u ON e.id_organizador = u.id_usuario
-                  LEFT JOIN categorias c ON e.id_categoria = c.id_categoria
-                  WHERE " . implode(' AND ', $where) . "
-                  ORDER BY " . $orderBy . "
-                  " . $limit;
-        
-        $stmt = $this->conn->prepare($query);
-        $stmt->execute($params);
-        
-        return $stmt->fetchAll();
-    }
-    
-    /**
-     * Buscar eventos públicos (para participantes)
-     */
-    public function getPublicEvents($filters = []) {
-        $filters['status'] = 'publicado';
-        return $this->list($filters);
-    }
-    
-    /**
-     * Buscar eventos do organizador
-     */
-    public function getEventsByOrganizer($organizador_id, $filters = []) {
-        $filters['organizador_id'] = $organizador_id;
-        return $this->list($filters);
-    }
-    
-    /**
-     * Contar eventos
-     */
-    public function count($filters = []) {
-        $where = ['1=1'];
-        $params = [];
-        
-        // Aplicar os mesmos filtros da função list()
-        if (!empty($filters['organizador_id'])) {
-            $where[] = "id_organizador = ?";
-            $params[] = $filters['organizador_id'];
-        }
-        
-        if (!empty($filters['status'])) {
-            $where[] = "status = ?";
-            $params[] = $filters['status'];
-        }
-        
-        if (!empty($filters['categoria_id'])) {
-            $where[] = "id_categoria = ?";
-            $params[] = $filters['categoria_id'];
-        }
-        
-        $query = "SELECT COUNT(*) as total FROM " . $this->table . " 
-                  WHERE " . implode(' AND ', $where);
-        
-        $stmt = $this->conn->prepare($query);
-        $stmt->execute($params);
-        
-        $result = $stmt->fetch();
-        return $result['total'];
-    }
-    
-    /**
-     * Alterar status do evento
-     */
-    public function changeStatus($id, $status, $organizador_id) {
-        $validStatuses = ['rascunho', 'publicado', 'cancelado', 'finalizado'];
-        
-        if (!in_array($status, $validStatuses)) {
-            return ['success' => false, 'message' => 'Status inválido.'];
-        }
-        
-        // Verificar se o evento pertence ao organizador
-        $evento = $this->findById($id);
-        if (!$evento || $evento['id_organizador'] != $organizador_id) {
-            return ['success' => false, 'message' => 'Evento não encontrado ou sem permissão.'];
-        }
-        
-        $query = "UPDATE " . $this->table . " SET status = ? WHERE id_evento = ?";
-        $stmt = $this->conn->prepare($query);
-        
+
+    // Atualizar evento
+    public function update() {
         try {
-            $result = $stmt->execute([$status, $id]);
-            
-            if ($result) {
-                return [
-                    'success' => true,
-                    'message' => 'Status do evento atualizado com sucesso!'
-                ];
-            }
-        } catch (PDOException $e) {
-            return [
-                'success' => false,
-                'message' => 'Erro ao atualizar status: ' . $e->getMessage()
-            ];
+            $query = "UPDATE " . $this->table_name . "
+                     SET titulo = :titulo,
+                         descricao = :descricao,
+                         data_inicio = :data_inicio,
+                         data_fim = :data_fim,
+                         horario_inicio = :horario_inicio,
+                         horario_fim = :horario_fim,
+                         local_nome = :local_nome,
+                         local_endereco = :local_endereco,
+                         local_cidade = :local_cidade,
+                         local_estado = :local_estado,
+                         local_cep = :local_cep,
+                         evento_gratuito = :evento_gratuito,
+                         preco = :preco,
+                         max_participantes = :max_participantes,
+                         categoria_id = :categoria_id,
+                         status = :status,
+                         imagem_capa = :imagem_capa,
+                         updated_at = NOW()
+                     WHERE id_evento = :id_evento
+                     AND organizador_id = :organizador_id";
+
+            $stmt = $this->conn->prepare($query);
+
+            // Bind dos parâmetros
+            $stmt->bindParam(':titulo', $this->titulo);
+            $stmt->bindParam(':descricao', $this->descricao);
+            $stmt->bindParam(':data_inicio', $this->data_inicio);
+            $stmt->bindParam(':data_fim', $this->data_fim);
+            $stmt->bindParam(':horario_inicio', $this->horario_inicio);
+            $stmt->bindParam(':horario_fim', $this->horario_fim);
+            $stmt->bindParam(':local_nome', $this->local_nome);
+            $stmt->bindParam(':local_endereco', $this->local_endereco);
+            $stmt->bindParam(':local_cidade', $this->local_cidade);
+            $stmt->bindParam(':local_estado', $this->local_estado);
+            $stmt->bindParam(':local_cep', $this->local_cep);
+            $stmt->bindParam(':evento_gratuito', $this->evento_gratuito);
+            $stmt->bindParam(':preco', $this->preco);
+            $stmt->bindParam(':max_participantes', $this->max_participantes);
+            $stmt->bindParam(':categoria_id', $this->categoria_id);
+            $stmt->bindParam(':status', $this->status);
+            $stmt->bindParam(':imagem_capa', $this->imagem_capa);
+            $stmt->bindParam(':id_evento', $this->id_evento);
+            $stmt->bindParam(':organizador_id', $this->organizador_id);
+
+            return $stmt->execute();
+
+        } catch (Exception $e) {
+            error_log("Erro ao atualizar evento: " . $e->getMessage());
+            return false;
         }
-        
-        return ['success' => false, 'message' => 'Erro desconhecido ao atualizar status.'];
     }
-    
-    /**
-     * Eventos em destaque
-     */
-    public function getFeaturedEvents($limit = 6) {
-        return $this->list([
-            'status' => 'publicado',
-            'limite' => $limit,
-            'ordem' => 'data_inicio'
-        ]);
+
+    // Deletar evento
+    public function delete() {
+        try {
+            $query = "DELETE FROM " . $this->table_name . "
+                     WHERE id_evento = :id_evento
+                     AND organizador_id = :organizador_id";
+
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(':id_evento', $this->id_evento);
+            $stmt->bindParam(':organizador_id', $this->organizador_id);
+
+            return $stmt->execute();
+
+        } catch (Exception $e) {
+            error_log("Erro ao deletar evento: " . $e->getMessage());
+            return false;
+        }
     }
-    
-    /**
-     * Eventos próximos
-     */
-    public function getUpcomingEvents($limit = 10) {
-        return $this->list([
-            'status' => 'publicado',
-            'data_inicio' => date('Y-m-d H:i:s'),
-            'limite' => $limit,
-            'ordem' => 'data_inicio'
-        ]);
+
+    // Verificar se usuário está inscrito no evento
+    public function isUserSubscribed($usuario_id) {
+        try {
+            $query = "SELECT id_inscricao FROM inscricoes 
+                     WHERE evento_id = :evento_id AND usuario_id = :usuario_id";
+
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(':evento_id', $this->id_evento);
+            $stmt->bindParam(':usuario_id', $usuario_id);
+            $stmt->execute();
+
+            return $stmt->rowCount() > 0;
+
+        } catch (Exception $e) {
+            error_log("Erro ao verificar inscrição: " . $e->getMessage());
+            return false;
+        }
     }
-    
-    /**
-     * Validar dados do evento
-     */
-    private function validateEventData($data) {
-        $errors = [];
-        
-        // Validar título
-        if (empty(trim($data['titulo']))) {
-            $errors[] = "Título é obrigatório.";
-        } elseif (strlen(trim($data['titulo'])) > 200) {
-            $errors[] = "Título não pode ter mais de 200 caracteres.";
+
+    // Contar participantes
+    public function countParticipants() {
+        try {
+            $query = "SELECT COUNT(*) as total FROM inscricoes WHERE evento_id = :evento_id";
+
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(':evento_id', $this->id_evento);
+            $stmt->execute();
+
+            $result = $stmt->fetch(PDO::FETCH_ASSOC);
+            return $result['total'];
+
+        } catch (Exception $e) {
+            error_log("Erro ao contar participantes: " . $e->getMessage());
+            return 0;
         }
-        
-        // Validar descrição
-        if (empty(trim($data['descricao']))) {
-            $errors[] = "Descrição é obrigatória.";
-        }
-        
-        // Validar datas
-        if (empty($data['data_inicio'])) {
-            $errors[] = "Data de início é obrigatória.";
-        }
-        
-        if (empty($data['data_fim'])) {
-            $errors[] = "Data de fim é obrigatória.";
-        }
-        
-        if (!empty($data['data_inicio']) && !empty($data['data_fim'])) {
-            $dataInicio = new DateTime($data['data_inicio']);
-            $dataFim = new DateTime($data['data_fim']);
-            
-            if ($dataInicio > $dataFim) {
-                $errors[] = "Data de início não pode ser posterior à data de fim.";
-            }
-            
-            if ($dataInicio < new DateTime()) {
-                $errors[] = "Data de início não pode ser no passado.";
-            }
-        }
-        
-        // Validar horários
-        if (empty($data['horario_inicio'])) {
-            $errors[] = "Horário de início é obrigatório.";
-        }
-        
-        if (empty($data['horario_fim'])) {
-            $errors[] = "Horário de fim é obrigatório.";
-        }
-        
-        // Validar local
-        if (empty(trim($data['local_nome']))) {
-            $errors[] = "Nome do local é obrigatório.";
-        }
-        
-        if (empty(trim($data['local_endereco']))) {
-            $errors[] = "Endereço do local é obrigatório.";
-        }
-        
-        if (empty(trim($data['local_cidade']))) {
-            $errors[] = "Cidade é obrigatória.";
-        }
-        
-        if (empty(trim($data['local_estado']))) {
-            $errors[] = "Estado é obrigatório.";
-        }
-        
-        // Validar capacidade
-        if (!empty($data['capacidade_maxima']) && $data['capacidade_maxima'] < 1) {
-            $errors[] = "Capacidade máxima deve ser maior que zero.";
-        }
-        
-        // Validar preço
-        if (!empty($data['preco']) && $data['preco'] < 0) {
-            $errors[] = "Preço não pode ser negativo.";
-        }
-        
-        // Validar status
-        $validStatuses = ['rascunho', 'publicado', 'cancelado', 'finalizado'];
-        if (!empty($data['status']) && !in_array($data['status'], $validStatuses)) {
-            $errors[] = "Status inválido.";
-        }
-        
-        if (!empty($errors)) {
-            return [
-                'success' => false,
-                'message' => implode(' ', $errors)
-            ];
-        }
-        
-        return ['success' => true];
     }
-    
-    /**
-     * Obter estatísticas do evento
-     */
-    public function getEventStats($event_id) {
-        $query = "SELECT 
-                    (SELECT COUNT(*) FROM inscricoes WHERE id_evento = ? AND status = 'confirmada') as inscritos_confirmados,
-                    (SELECT COUNT(*) FROM inscricoes WHERE id_evento = ? AND status = 'pendente') as inscritos_pendentes,
-                    (SELECT COUNT(*) FROM inscricoes WHERE id_evento = ? AND status = 'cancelada') as inscritos_cancelados,
-                    (SELECT COUNT(*) FROM favoritos WHERE id_evento = ?) as total_favoritos,
-                    (SELECT AVG(avaliacao_evento) FROM inscricoes WHERE id_evento = ? AND avaliacao_evento IS NOT NULL) as media_avaliacoes";
+
+    // Verificar se evento tem vagas
+    public function hasAvailableSlots() {
+        if (!$this->max_participantes) {
+            return true; // Sem limite
+        }
+
+        $current_participants = $this->countParticipants();
+        return $current_participants < $this->max_participantes;
+    }
+
+    // Formatar dados para exibição
+    public function formatForDisplay($event_data) {
+        if (!$event_data) {
+            return null;
+        }
+
+        $event_data['data_inicio_formatada'] = date('d/m/Y', strtotime($event_data['data_inicio']));
+        $event_data['data_fim_formatada'] = date('d/m/Y', strtotime($event_data['data_fim']));
+        $event_data['horario_inicio_formatado'] = date('H:i', strtotime($event_data['horario_inicio']));
+        $event_data['horario_fim_formatado'] = date('H:i', strtotime($event_data['horario_fim']));
         
-        $stmt = $this->conn->prepare($query);
-        $stmt->execute([$event_id, $event_id, $event_id, $event_id, $event_id]);
-        
-        return $stmt->fetch();
+        if ($event_data['evento_gratuito']) {
+            $event_data['preco_formatado'] = 'Gratuito';
+        } else {
+            $event_data['preco_formatado'] = 'R$ ' . number_format($event_data['preco'], 2, ',', '.');
+        }
+
+        // URL da imagem
+        if ($event_data['imagem_capa']) {
+            $event_data['imagem_url'] = 'uploads/eventos/' . $event_data['imagem_capa'];
+        } else {
+            $event_data['imagem_url'] = '';
+        }
+
+        return $event_data;
     }
 }
-?>
