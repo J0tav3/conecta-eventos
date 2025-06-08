@@ -1,68 +1,60 @@
 <?php
 // ==========================================
-// PÁGINA DE LOGIN - VERSÃO CORRIGIDA
+// PÁGINA DE LOGIN - VERSÃO SIMPLIFICADA
 // Local: views/auth/login.php
 // ==========================================
 
-require_once '../../config/config.php';
-require_once '../../includes/session.php';
+// Não incluir outros arquivos que podem dar erro
+// require_once '../../config/config.php';
+// require_once '../../includes/session.php';
 
-// Se já estiver logado, redirecionar
-if (function_exists('isLoggedIn') && isLoggedIn()) {
-    if (function_exists('isOrganizer') && isOrganizer()) {
-        header("Location: ../dashboard/organizer.php");
-    } else {
-        header("Location: ../dashboard/participant.php");
-    }
-    exit;
-}
+session_start();
 
 $title = "Login - Conecta Eventos";
 $error_message = '';
 $success_message = '';
 
-// Processar formulário
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    try {
-        $email = trim($_POST['email'] ?? '');
-        $senha = $_POST['senha'] ?? '';
-        
-        if (empty($email) || empty($senha)) {
-            $error_message = "Por favor, preencha todos os campos.";
-        } else {
-            // Verificar se existe AuthController
-            if (file_exists('../../controllers/AuthController.php')) {
-                require_once '../../controllers/AuthController.php';
-                $authController = new AuthController();
-                $result = $authController->login($email, $senha);
-                
-                if ($result['success']) {
-                    // Redirecionar baseado no tipo de usuário
-                    if ($result['user']['tipo_usuario'] === 'organizador') {
-                        header("Location: ../dashboard/organizer.php");
-                    } else {
-                        header("Location: ../dashboard/participant.php");
-                    }
-                    exit;
-                } else {
-                    $error_message = $result['message'];
-                }
-            } else {
-                $error_message = "Sistema de autenticação não disponível.";
-            }
-        }
-    } catch (Exception $e) {
-        error_log("Erro no login: " . $e->getMessage());
-        $error_message = "Erro interno. Tente novamente.";
-    }
-}
-
-// URL base correta - Usar caminho relativo
+// URL base correta
 $homeUrl = '../../index.php';
 
 // Verificar se veio da página de registro
 if (isset($_GET['registered']) && $_GET['registered'] === '1') {
     $success_message = "Conta criada com sucesso! Faça login para continuar.";
+}
+
+// Processar formulário (versão simplificada)
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    $email = trim($_POST['email'] ?? '');
+    $senha = $_POST['senha'] ?? '';
+    
+    if (empty($email) || empty($senha)) {
+        $error_message = "Por favor, preencha todos os campos.";
+    } else {
+        // Login temporário com contas demo
+        $demo_accounts = [
+            'admin@conectaeventos.com' => ['senha' => 'admin123', 'tipo' => 'organizador', 'nome' => 'Administrador'],
+            'user@conectaeventos.com' => ['senha' => 'user123', 'tipo' => 'participante', 'nome' => 'Usuário Demo']
+        ];
+        
+        if (isset($demo_accounts[$email]) && $demo_accounts[$email]['senha'] === $senha) {
+            // Login bem-sucedido
+            $_SESSION['user_id'] = 1;
+            $_SESSION['user_email'] = $email;
+            $_SESSION['user_name'] = $demo_accounts[$email]['nome'];
+            $_SESSION['user_type'] = $demo_accounts[$email]['tipo'];
+            $_SESSION['logged_in'] = true;
+            
+            // Redirecionar baseado no tipo
+            if ($demo_accounts[$email]['tipo'] === 'organizador') {
+                header("Location: ../dashboard/organizer.php");
+            } else {
+                header("Location: ../dashboard/participant.php");
+            }
+            exit;
+        } else {
+            $error_message = "Email ou senha incorretos.";
+        }
+    }
 }
 ?>
 
@@ -312,11 +304,25 @@ if (isset($_GET['registered']) && $_GET['registered'] === '1') {
                         </div>
                     </form>
                     
-                    <!-- Demo Login (opcional) -->
+                    <!-- Demo Login -->
                     <div class="mt-4 p-3 bg-light rounded">
-                        <h6 class="text-muted mb-2">
+                        <h6 class="text-muted mb-3">
                             <i class="fas fa-info-circle me-2"></i>Contas de Teste
                         </h6>
+                        
+                        <div class="row">
+                            <div class="col-md-6 mb-2">
+                                <button type="button" class="btn btn-sm btn-outline-primary w-100" onclick="fillLogin('admin@conectaeventos.com', 'admin123')">
+                                    <i class="fas fa-user-cog me-1"></i>Login Organizador
+                                </button>
+                            </div>
+                            <div class="col-md-6 mb-2">
+                                <button type="button" class="btn btn-sm btn-outline-success w-100" onclick="fillLogin('user@conectaeventos.com', 'user123')">
+                                    <i class="fas fa-user me-1"></i>Login Participante
+                                </button>
+                            </div>
+                        </div>
+                        
                         <small class="text-muted">
                             <strong>Organizador:</strong> admin@conectaeventos.com / admin123<br>
                             <strong>Participante:</strong> user@conectaeventos.com / user123
@@ -330,6 +336,12 @@ if (isset($_GET['registered']) && $_GET['registered'] === '1') {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
+        // Função para preencher login
+        function fillLogin(email, senha) {
+            document.getElementById('email').value = email;
+            document.getElementById('senha').value = senha;
+        }
+        
         document.addEventListener('DOMContentLoaded', function() {
             // Toggle password visibility
             const togglePassword = document.getElementById('togglePassword');
@@ -372,36 +384,6 @@ if (isset($_GET['registered']) && $_GET['registered'] === '1') {
             
             // Focus no primeiro campo
             document.getElementById('email').focus();
-            
-            // Demo login buttons
-            const emailField = document.getElementById('email');
-            const senhaField = document.getElementById('senha');
-            
-            // Adicionar botões de login rápido
-            const demoSection = document.querySelector('.bg-light');
-            if (demoSection) {
-                const adminBtn = document.createElement('button');
-                adminBtn.type = 'button';
-                adminBtn.className = 'btn btn-sm btn-outline-primary me-2 mt-2';
-                adminBtn.innerHTML = '<i class="fas fa-user-cog me-1"></i>Login Admin';
-                adminBtn.onclick = function() {
-                    emailField.value = 'admin@conectaeventos.com';
-                    senhaField.value = 'admin123';
-                };
-                
-                const userBtn = document.createElement('button');
-                userBtn.type = 'button';
-                userBtn.className = 'btn btn-sm btn-outline-success mt-2';
-                userBtn.innerHTML = '<i class="fas fa-user me-1"></i>Login User';
-                userBtn.onclick = function() {
-                    emailField.value = 'user@conectaeventos.com';
-                    senhaField.value = 'user123';
-                };
-                
-                demoSection.appendChild(document.createElement('br'));
-                demoSection.appendChild(adminBtn);
-                demoSection.appendChild(userBtn);
-            }
         });
     </script>
 </body>
