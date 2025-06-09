@@ -4,12 +4,13 @@
 // Local: views/auth/register.php
 // ==========================================
 
-require_once '../../config/config.php';
-require_once '../../includes/session.php';
+// Não incluir outros arquivos que podem dar erro diretamente
+session_start();
 
-// Se já estiver logado, redirecionar
-if (isLoggedIn()) {
-    if (isOrganizer()) {
+// Verificar se já está logado
+if (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
+    $userType = $_SESSION['user_type'] ?? 'participante';
+    if ($userType === 'organizador') {
         header("Location: ../dashboard/organizer.php");
     } else {
         header("Location: ../dashboard/participant.php");
@@ -24,24 +25,50 @@ $success_message = '';
 // Processar formulário
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
-        require_once '../../controllers/AuthController.php';
+        // Tentar incluir os arquivos necessários
+        $config_loaded = false;
+        $auth_loaded = false;
         
-        $authController = new AuthController();
-        $result = $authController->register($_POST);
+        // Tentar carregar configurações
+        if (file_exists('../../config/config.php')) {
+            require_once '../../config/config.php';
+            $config_loaded = true;
+        }
         
-        if ($result['success']) {
-            $success_message = $result['message'];
+        // Tentar carregar controller
+        if (file_exists('../../controllers/AuthController.php')) {
+            require_once '../../controllers/AuthController.php';
+            $auth_loaded = true;
+        }
+        
+        if ($config_loaded && $auth_loaded) {
+            // Sistema completo disponível
+            $authController = new AuthController();
+            $result = $authController->register($_POST);
+            
+            if ($result['success']) {
+                $success_message = $result['message'];
+                
+                // Se tem redirect, usar
+                if (isset($result['redirect'])) {
+                    header('Location: ' . $result['redirect']);
+                    exit;
+                }
+            } else {
+                $error_message = $result['message'];
+            }
         } else {
-            $error_message = $result['message'];
+            // Sistema limitado - não conseguiu carregar dependências
+            $error_message = "Sistema temporariamente indisponível. Tente novamente mais tarde.";
         }
     } catch (Exception $e) {
         error_log("Erro no cadastro: " . $e->getMessage());
-        $error_message = "Erro interno. Tente novamente.";
+        $error_message = "Erro interno do sistema. Tente novamente.";
     }
 }
 
-// URL base correta
-$baseUrl = defined('SITE_URL') ? SITE_URL : 'https://conecta-eventos-production.up.railway.app';
+// URL base
+$baseUrl = 'https://conecta-eventos-production.up.railway.app';
 $homeUrl = $baseUrl . '/index.php';
 ?>
 
@@ -115,6 +142,14 @@ $homeUrl = $baseUrl . '/index.php';
             transition: transform 0.2s ease;
         }
         
+        .is-invalid {
+            border-color: #dc3545;
+        }
+        
+        .invalid-feedback {
+            display: block;
+        }
+        
         @media (max-width: 768px) {
             .auth-left {
                 padding: 2rem;
@@ -160,13 +195,6 @@ $homeUrl = $baseUrl . '/index.php';
                                 <div class="mb-2">
                                     <i class="fas fa-calendar-plus fa-2x"></i>
                                 </div>
-                                <h6>Organizar Eventos</h6>
-                                <small>Crie e gerencie seus eventos</small>
-                            </div>
-                            <div class="col-6">
-                                <div class="mb-2">
-                                    <i class="fas fa-users fa-2x"></i>
-                                </div>
                                 <h6>Participar</h6>
                                 <small>Inscreva-se em eventos</small>
                             </div>
@@ -208,7 +236,7 @@ $homeUrl = $baseUrl . '/index.php';
                     <?php endif; ?>
                     
                     <!-- Formulário -->
-                    <form method="POST" id="registerForm">
+                    <form method="POST" id="registerForm" novalidate>
                         <div class="row">
                             <div class="col-md-6 mb-3">
                                 <label for="nome" class="form-label">Nome Completo *</label>
@@ -217,8 +245,12 @@ $homeUrl = $baseUrl . '/index.php';
                                        id="nome" 
                                        name="nome" 
                                        required
+                                       minlength="2"
                                        value="<?php echo htmlspecialchars($_POST['nome'] ?? ''); ?>"
                                        placeholder="Seu nome completo">
+                                <div class="invalid-feedback">
+                                    Por favor, insira seu nome completo (mínimo 2 caracteres).
+                                </div>
                             </div>
                             
                             <div class="col-md-6 mb-3">
@@ -230,6 +262,9 @@ $homeUrl = $baseUrl . '/index.php';
                                        required
                                        value="<?php echo htmlspecialchars($_POST['email'] ?? ''); ?>"
                                        placeholder="seu@email.com">
+                                <div class="invalid-feedback">
+                                    Por favor, insira um e-mail válido.
+                                </div>
                             </div>
                         </div>
                         
@@ -248,7 +283,9 @@ $homeUrl = $baseUrl . '/index.php';
                                         <i class="fas fa-eye"></i>
                                     </button>
                                 </div>
-                                <small class="text-muted">Mínimo 6 caracteres</small>
+                                <div class="invalid-feedback">
+                                    A senha deve ter pelo menos 6 caracteres.
+                                </div>
                             </div>
                             
                             <div class="col-md-6 mb-3">
@@ -259,6 +296,9 @@ $homeUrl = $baseUrl . '/index.php';
                                        name="confirma_senha" 
                                        required
                                        placeholder="Digite a senha novamente">
+                                <div class="invalid-feedback">
+                                    As senhas não coincidem.
+                                </div>
                             </div>
                         </div>
                         
@@ -270,7 +310,8 @@ $homeUrl = $baseUrl . '/index.php';
                                        id="telefone" 
                                        name="telefone"
                                        value="<?php echo htmlspecialchars($_POST['telefone'] ?? ''); ?>"
-                                       placeholder="(11) 99999-9999">
+                                       placeholder="(11) 99999-9999"
+                                       maxlength="15">
                             </div>
                             
                             <div class="col-md-6 mb-3">
@@ -278,30 +319,23 @@ $homeUrl = $baseUrl . '/index.php';
                                 <select class="form-select" id="tipo_usuario" name="tipo_usuario" required>
                                     <option value="">Selecione...</option>
                                     <option value="participante" <?php echo ($_POST['tipo_usuario'] ?? '') === 'participante' ? 'selected' : ''; ?>>
-                                        Participante (quero participar de eventos)
+                                        🎯 Participante (quero participar de eventos)
                                     </option>
                                     <option value="organizador" <?php echo ($_POST['tipo_usuario'] ?? '') === 'organizador' ? 'selected' : ''; ?>>
-                                        Organizador (quero criar eventos)
+                                        🎪 Organizador (quero criar eventos)
                                     </option>
                                 </select>
+                                <div class="invalid-feedback">
+                                    Por favor, selecione o tipo de conta.
+                                </div>
                             </div>
                         </div>
                         
                         <div class="row">
                             <div class="col-md-6 mb-3">
-                                <label for="cidade" class="form-label">Cidade</label>
-                                <input type="text" 
-                                       class="form-control" 
-                                       id="cidade" 
-                                       name="cidade"
-                                       value="<?php echo htmlspecialchars($_POST['cidade'] ?? ''); ?>"
-                                       placeholder="Sua cidade">
-                            </div>
-                            
-                            <div class="col-md-6 mb-3">
                                 <label for="estado" class="form-label">Estado</label>
                                 <select class="form-select" id="estado" name="estado">
-                                    <option value="">Selecione...</option>
+                                    <option value="">Selecione o estado...</option>
                                     <option value="AC" <?php echo ($_POST['estado'] ?? '') === 'AC' ? 'selected' : ''; ?>>Acre</option>
                                     <option value="AL" <?php echo ($_POST['estado'] ?? '') === 'AL' ? 'selected' : ''; ?>>Alagoas</option>
                                     <option value="AP" <?php echo ($_POST['estado'] ?? '') === 'AP' ? 'selected' : ''; ?>>Amapá</option>
@@ -331,20 +365,37 @@ $homeUrl = $baseUrl . '/index.php';
                                     <option value="TO" <?php echo ($_POST['estado'] ?? '') === 'TO' ? 'selected' : ''; ?>>Tocantins</option>
                                 </select>
                             </div>
+                            
+                            <div class="col-md-6 mb-3">
+                                <label for="cidade" class="form-label">Cidade</label>
+                                <input type="text" 
+                                       class="form-control" 
+                                       id="cidade" 
+                                       name="cidade"
+                                       value="<?php echo htmlspecialchars($_POST['cidade'] ?? ''); ?>"
+                                       placeholder="Digite sua cidade">
+                                <small class="form-text text-muted">
+                                    <i class="fas fa-info-circle me-1"></i>
+                                    Selecione primeiro o estado para validação automática
+                                </small>
+                            </div>
                         </div>
                         
                         <div class="mb-3">
                             <div class="form-check">
                                 <input class="form-check-input" type="checkbox" id="termos" name="termos" required>
                                 <label class="form-check-label" for="termos">
-                                    Eu aceito os <a href="#" class="text-decoration-none">Termos de Uso</a> e 
-                                    <a href="#" class="text-decoration-none">Política de Privacidade</a> *
+                                    Eu aceito os <a href="#" class="text-decoration-none" onclick="showTerms()">Termos de Uso</a> e 
+                                    <a href="#" class="text-decoration-none" onclick="showPrivacy()">Política de Privacidade</a> *
                                 </label>
+                                <div class="invalid-feedback">
+                                    Você deve aceitar os termos para continuar.
+                                </div>
                             </div>
                         </div>
                         
                         <div class="d-grid gap-2">
-                            <button type="submit" class="btn btn-primary btn-lg">
+                            <button type="submit" class="btn btn-primary btn-lg" id="submitBtn">
                                 <i class="fas fa-user-plus me-2"></i>Criar Conta
                             </button>
                             
@@ -368,25 +419,112 @@ $homeUrl = $baseUrl . '/index.php';
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
+        // Dados de cidades por estado (principais cidades)
+        const cidadesPorEstado = {
+            'AC': ['Rio Branco', 'Cruzeiro do Sul', 'Sena Madureira'],
+            'AL': ['Maceió', 'Arapiraca', 'Palmeira dos Índios'],
+            'AP': ['Macapá', 'Santana', 'Laranjal do Jari'],
+            'AM': ['Manaus', 'Parintins', 'Itacoatiara'],
+            'BA': ['Salvador', 'Feira de Santana', 'Vitória da Conquista'],
+            'CE': ['Fortaleza', 'Caucaia', 'Juazeiro do Norte'],
+            'DF': ['Brasília', 'Taguatinga', 'Ceilândia'],
+            'ES': ['Vitória', 'Serra', 'Vila Velha'],
+            'GO': ['Goiânia', 'Aparecida de Goiânia', 'Anápolis'],
+            'MA': ['São Luís', 'Imperatriz', 'Timon'],
+            'MT': ['Cuiabá', 'Várzea Grande', 'Rondonópolis'],
+            'MS': ['Campo Grande', 'Dourados', 'Três Lagoas'],
+            'MG': ['Belo Horizonte', 'Uberlândia', 'Contagem'],
+            'PA': ['Belém', 'Ananindeua', 'Santarém'],
+            'PB': ['João Pessoa', 'Campina Grande', 'Santa Rita'],
+            'PR': ['Curitiba', 'Londrina', 'Maringá'],
+            'PE': ['Recife', 'Jaboatão dos Guararapes', 'Olinda'],
+            'PI': ['Teresina', 'Parnaíba', 'Picos'],
+            'RJ': ['Rio de Janeiro', 'São Gonçalo', 'Duque de Caxias'],
+            'RN': ['Natal', 'Mossoró', 'Parnamirim'],
+            'RS': ['Porto Alegre', 'Caxias do Sul', 'Pelotas'],
+            'RO': ['Porto Velho', 'Ji-Paraná', 'Ariquemes'],
+            'RR': ['Boa Vista', 'Rorainópolis', 'Caracaraí'],
+            'SC': ['Florianópolis', 'Joinville', 'Blumenau'],
+            'SP': ['São Paulo', 'Guarulhos', 'Campinas'],
+            'SE': ['Aracaju', 'Nossa Senhora do Socorro', 'Lagarto'],
+            'TO': ['Palmas', 'Araguaína', 'Gurupi']
+        };
+
         document.addEventListener('DOMContentLoaded', function() {
-            // Toggle password visibility
+            const form = document.getElementById('registerForm');
+            const estadoSelect = document.getElementById('estado');
+            const cidadeInput = document.getElementById('cidade');
+            const senha = document.getElementById('senha');
+            const confirmaSenha = document.getElementById('confirma_senha');
             const togglePassword = document.getElementById('togglePassword');
-            const passwordField = document.getElementById('senha');
-            
+            const telefone = document.getElementById('telefone');
+
+            // Toggle password visibility
             togglePassword.addEventListener('click', function() {
-                const type = passwordField.getAttribute('type') === 'password' ? 'text' : 'password';
-                passwordField.setAttribute('type', type);
+                const type = senha.getAttribute('type') === 'password' ? 'text' : 'password';
+                senha.setAttribute('type', type);
                 
                 const icon = this.querySelector('i');
                 icon.classList.toggle('fa-eye');
                 icon.classList.toggle('fa-eye-slash');
             });
-            
+
+            // Validação de estados e cidades
+            estadoSelect.addEventListener('change', function() {
+                const estado = this.value;
+                cidadeInput.value = '';
+                
+                if (estado && cidadesPorEstado[estado]) {
+                    cidadeInput.setAttribute('list', 'cidades');
+                    
+                    // Criar datalist se não existir
+                    let datalist = document.getElementById('cidades');
+                    if (!datalist) {
+                        datalist = document.createElement('datalist');
+                        datalist.id = 'cidades';
+                        document.body.appendChild(datalist);
+                    }
+                    
+                    // Limpar e adicionar cidades
+                    datalist.innerHTML = '';
+                    cidadesPorEstado[estado].forEach(cidade => {
+                        const option = document.createElement('option');
+                        option.value = cidade;
+                        datalist.appendChild(option);
+                    });
+                    
+                    cidadeInput.placeholder = `Digite uma cidade de ${this.options[this.selectedIndex].text}`;
+                } else {
+                    cidadeInput.removeAttribute('list');
+                    cidadeInput.placeholder = 'Digite sua cidade';
+                }
+            });
+
+            // Validação de cidade baseada no estado
+            cidadeInput.addEventListener('blur', function() {
+                const estado = estadoSelect.value;
+                const cidade = this.value.trim();
+                
+                if (estado && cidade && cidadesPorEstado[estado]) {
+                    const cidadesValidas = cidadesPorEstado[estado].map(c => c.toLowerCase());
+                    const cidadeLower = cidade.toLowerCase();
+                    
+                    // Verificar se a cidade é válida (busca parcial)
+                    const cidadeValida = cidadesValidas.some(c => 
+                        c.includes(cidadeLower) || cidadeLower.includes(c)
+                    );
+                    
+                    if (!cidadeValida) {
+                        this.setCustomValidity('Cidade não encontrada neste estado. Verifique a grafia.');
+                    } else {
+                        this.setCustomValidity('');
+                    }
+                } else {
+                    this.setCustomValidity('');
+                }
+            });
+
             // Validação de senhas
-            const form = document.getElementById('registerForm');
-            const senha = document.getElementById('senha');
-            const confirmaSenha = document.getElementById('confirma_senha');
-            
             function validatePasswords() {
                 if (senha.value !== confirmaSenha.value) {
                     confirmaSenha.setCustomValidity('As senhas não coincidem');
@@ -395,25 +533,68 @@ $homeUrl = $baseUrl . '/index.php';
                 }
             }
             
-            senha.addEventListener('change', validatePasswords);
-            confirmaSenha.addEventListener('keyup', validatePasswords);
-            
+            senha.addEventListener('input', validatePasswords);
+            confirmaSenha.addEventListener('input', validatePasswords);
+
             // Máscara de telefone
-            const telefone = document.getElementById('telefone');
             telefone.addEventListener('input', function(e) {
                 let value = e.target.value.replace(/\D/g, '');
-                value = value.replace(/(\d{2})(\d)/, '($1) $2');
-                value = value.replace(/(\d{5})(\d)/, '$1-$2');
+                if (value.length > 0) {
+                    value = value.replace(/(\d{2})(\d)/, '($1) $2');
+                    value = value.replace(/(\d{5})(\d)/, '$1-$2');
+                }
                 e.target.value = value;
             });
-            
-            // Loading state no submit
-            form.addEventListener('submit', function() {
-                const submitBtn = form.querySelector('button[type="submit"]');
-                submitBtn.disabled = true;
-                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Criando conta...';
+
+            // Validação customizada do formulário
+            form.addEventListener('submit', function(e) {
+                e.preventDefault();
+                e.stopPropagation();
+
+                // Remover classes de validação anteriores
+                form.classList.remove('was-validated');
+                
+                let isValid = true;
+
+                // Validar campos obrigatórios
+                const requiredFields = form.querySelectorAll('[required]');
+                requiredFields.forEach(field => {
+                    if (!field.value.trim()) {
+                        field.classList.add('is-invalid');
+                        isValid = false;
+                    } else {
+                        field.classList.remove('is-invalid');
+                    }
+                });
+
+                // Validar email
+                const email = document.getElementById('email');
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(email.value)) {
+                    email.classList.add('is-invalid');
+                    isValid = false;
+                }
+
+                // Validar senhas
+                if (senha.value !== confirmaSenha.value) {
+                    confirmaSenha.classList.add('is-invalid');
+                    isValid = false;
+                }
+
+                if (isValid) {
+                    // Mostrar loading
+                    const submitBtn = document.getElementById('submitBtn');
+                    const originalText = submitBtn.innerHTML;
+                    submitBtn.disabled = true;
+                    submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Criando conta...';
+                    
+                    // Submeter formulário
+                    form.submit();
+                } else {
+                    form.classList.add('was-validated');
+                }
             });
-            
+
             // Auto-hide alerts
             const alerts = document.querySelectorAll('.alert');
             alerts.forEach(alert => {
@@ -425,6 +606,22 @@ $homeUrl = $baseUrl . '/index.php';
                 }, 5000);
             });
         });
+
+        // Funções para modais de termos
+        function showTerms() {
+            alert('Termos de Uso:\n\n1. Este é um projeto demonstrativo\n2. Use responsavelmente\n3. Respeite outros usuários\n4. Não publique conteúdo inadequado\n\n(Interface completa em desenvolvimento)');
+        }
+
+        function showPrivacy() {
+            alert('Política de Privacidade:\n\n1. Seus dados são protegidos\n2. Não compartilhamos informações pessoais\n3. Cookies são usados para melhorar a experiência\n4. Você pode solicitar exclusão dos dados\n\n(Política completa em desenvolvimento)');
+        }
     </script>
 </body>
-</html>
+</html>>Organizar Eventos</h6>
+                                <small>Crie e gerencie seus eventos</small>
+                            </div>
+                            <div class="col-6">
+                                <div class="mb-2">
+                                    <i class="fas fa-users fa-2x"></i>
+                                </div>
+                                <h6

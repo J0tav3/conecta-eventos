@@ -1,9 +1,14 @@
 <?php
+// ==========================================
+// AUTH CONTROLLER - VERSÃO CORRIGIDA RAILWAY
+// Local: controllers/AuthController.php
+// ==========================================
+
 require_once __DIR__ . '/../config/config.php';
-require_once __DIR__ . '/../models/User.php';
 
 class AuthController {
-    private $userModel;
+    private $db;
+    private $conn;
     
     public function __construct() {
         // Iniciar sessão se não estiver iniciada
@@ -11,13 +16,25 @@ class AuthController {
             session_start();
         }
         
-        $this->userModel = new User();
+        try {
+            // Tentar conectar com banco
+            if (class_exists('Database')) {
+                $this->db = new Database();
+                $this->conn = $this->db->getConnection();
+            }
+        } catch (Exception $e) {
+            error_log("AuthController: Erro ao conectar: " . $e->getMessage());
+            $this->conn = null;
+        }
     }
     
     /**
      * Processar login
      */
-    public function login($email, $senha) {
+    public function login($data) {
+        $email = trim($data['email'] ?? '');
+        $senha = $data['senha'] ?? '';
+        
         // Validar entrada
         if (empty($email) || empty($senha)) {
             return [
@@ -26,60 +43,255 @@ class AuthController {
             ];
         }
         
-        // Tentar autenticar
-        $result = $this->userModel->authenticate($email, $senha);
-        
-        if ($result['success']) {
-            $user = $result['user'];
-            
-            // Criar sessão
-            $_SESSION['user_id'] = $user['id_usuario'];
-            $_SESSION['user_name'] = $user['nome'];
-            $_SESSION['user_email'] = $user['email'];
-            $_SESSION['user_type'] = $user['tipo'];
-            $_SESSION['login_time'] = time();
-            
-            // Atualizar último acesso
-            $this->userModel->updateLastAccess($user['id_usuario']);
-            
-            // Regenerar ID da sessão para segurança
-            session_regenerate_id(true);
-            
-            return [
-                'success' => true,
-                'message' => 'Login realizado com sucesso!',
-                'redirect' => $this->getRedirectUrl($user['tipo'])
-            ];
+        // Verificar se tem conexão com banco
+        if (!$this->conn) {
+            return $this->handleDemoLogin($email, $senha);
         }
         
-        return $result;
+        try {
+            // Tentar autenticar no banco
+            $stmt = $this->conn->prepare("
+                SELECT id_usuario, nome, email, senha, tipo, ativo 
+                FROM usuarios 
+                WHERE email = ? AND ativo = 1
+            ");
+            $stmt->execute([$email]);
+            
+            if ($stmt->rowCount() > 0) {
+                $user = $stmt->fetch();
+                
+                if (password_verify($senha, $user['senha'])) {
+                    $this->createUserSession($user);
+                    
+                    // Atualizar último acesso
+                    $this->updateLastAccess($user['id_usuario']);
+                    
+                    return [
+                        'success' => true,
+                        'message' => 'Login realizado com sucesso!',
+                        'redirect' => $this->getRedirectUrl($user['tipo'])
+                    ];
+                } else {
+                    return ['success' => false, 'message' => 'Senha incorreta.'];
+                }
+            }
+            
+            return ['success' => false, 'message' => 'E-mail não encontrado.'];
+            
+        } catch (Exception $e) {
+            error_log("Erro no login: " . $e->getMessage());
+            return $this->handleDemoLogin($email, $senha);
+        }
     }
     
     /**
      * Processar cadastro
      */
-    public function register($nome, $email, $senha, $confirmar_senha, $tipo) {
-        // Validar senhas
-        if ($senha !== $confirmar_senha) {
+    public function register($data) {
+        $nome = trim($data['nome'] ?? '');
+        $email = trim($data['email'] ?? '');
+        $senha = $data['senha'] ?? '';
+        $confirma_senha = $data['confirma_senha'] ?? '';
+        $tipo_usuario = $data['tipo_usuario'] ?? 'participante';
+        $telefone = trim($data['telefone'] ?? '');
+        $cidade = trim($data['cidade'] ?? '');
+        $estado = $data['estado'] ?? '';
+        
+        // Validações básicas
+        $validation = $this->validateRegistration($data);
+        if (!$validation['valid']) {
             return [
                 'success' => false,
-                'message' => 'As senhas não coincidem.'
+                'message' => $validation['message']
             ];
         }
         
-        // Tentar criar usuário
-        $result = $this->userModel->create($nome, $email, $senha, $tipo);
-        
-        if ($result['success']) {
-            // Auto-login após cadastro
-            $loginResult = $this->login($email, $senha);
-            
-            if ($loginResult['success']) {
-                $result['redirect'] = $loginResult['redirect'];
-            }
+        // Verificar se tem conexão com banco
+        if (!$this->conn) {
+            return [
+                'success' => false,
+                'message' => 'Sistema temporariamente indisponível. Tente novamente mais tarde.'
+            ];
         }
         
-        return $result;
+        try {
+            // Verificar se email já existe
+            $stmt = $this->conn->prepare("SELECT id_usuario FROM usuarios WHERE email = ?");
+            $stmt->execute([$email]);
+            
+            if ($stmt->rowCount() > 0) {
+                return [
+                    'success' => false,
+                    'message' => 'Este e-mail já está cadastrado. Tente fazer login ou use outro e-mail.'
+                ];
+            }
+            
+            // Criar usuário
+            $senha_hash = password_hash($senha, PASSWORD_DEFAULT);
+            
+            $stmt = $this->conn->prepare("
+                INSERT INTO usuarios (nome, email, senha, tipo, telefone, cidade, estado, ativo) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, 1)
+            ");
+            
+            $result = $stmt->execute([
+                $nome, 
+                $email, 
+                $senha_hash, 
+                $tipo_usuario,
+                $telefone,
+                $cidade,
+                $estado
+            ]);
+            
+            if ($result) {
+                $user_id = $this->conn->lastInsertId();
+                
+                // Fazer login automático
+                $new_user = [
+                    'id_usuario' => $user_id,
+                    'nome' => $nome,
+                    'email' => $email,
+                    'tipo' => $tipo_usuario
+                ];
+                
+                $this->createUserSession($new_user);
+                
+                return [
+                    'success' => true,
+                    'message' => 'Cadastro realizado com sucesso! Bem-vindo ao Conecta Eventos!',
+                    'redirect' => $this->getRedirectUrl($tipo_usuario)
+                ];
+            }
+            
+            return [
+                'success' => false,
+                'message' => 'Erro ao criar conta. Tente novamente.'
+            ];
+            
+        } catch (Exception $e) {
+            error_log("Erro no cadastro: " . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Erro interno do sistema. Tente novamente mais tarde.'
+            ];
+        }
+    }
+    
+    /**
+     * Validar dados de registro
+     */
+    private function validateRegistration($data) {
+        $nome = trim($data['nome'] ?? '');
+        $email = trim($data['email'] ?? '');
+        $senha = $data['senha'] ?? '';
+        $confirma_senha = $data['confirma_senha'] ?? '';
+        $tipo_usuario = $data['tipo_usuario'] ?? '';
+        
+        if (empty($nome)) {
+            return ['valid' => false, 'message' => 'Nome é obrigatório.'];
+        }
+        
+        if (strlen($nome) < 2) {
+            return ['valid' => false, 'message' => 'Nome deve ter pelo menos 2 caracteres.'];
+        }
+        
+        if (empty($email)) {
+            return ['valid' => false, 'message' => 'E-mail é obrigatório.'];
+        }
+        
+        if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+            return ['valid' => false, 'message' => 'E-mail inválido.'];
+        }
+        
+        if (empty($senha)) {
+            return ['valid' => false, 'message' => 'Senha é obrigatória.'];
+        }
+        
+        if (strlen($senha) < 6) {
+            return ['valid' => false, 'message' => 'Senha deve ter pelo menos 6 caracteres.'];
+        }
+        
+        if ($senha !== $confirma_senha) {
+            return ['valid' => false, 'message' => 'As senhas não coincidem.'];
+        }
+        
+        if (!in_array($tipo_usuario, ['organizador', 'participante'])) {
+            return ['valid' => false, 'message' => 'Tipo de usuário inválido.'];
+        }
+        
+        return ['valid' => true, 'message' => 'Dados válidos'];
+    }
+    
+    /**
+     * Login demo para quando banco não está disponível
+     */
+    private function handleDemoLogin($email, $senha) {
+        $demo_accounts = [
+            'admin@conectaeventos.com' => [
+                'senha' => 'admin123', 
+                'tipo' => 'organizador', 
+                'nome' => 'Administrador Demo',
+                'id' => 1
+            ],
+            'user@conectaeventos.com' => [
+                'senha' => 'user123', 
+                'tipo' => 'participante', 
+                'nome' => 'Usuário Demo',
+                'id' => 2
+            ]
+        ];
+        
+        if (isset($demo_accounts[$email]) && $demo_accounts[$email]['senha'] === $senha) {
+            $user = [
+                'id_usuario' => $demo_accounts[$email]['id'],
+                'nome' => $demo_accounts[$email]['nome'],
+                'email' => $email,
+                'tipo' => $demo_accounts[$email]['tipo']
+            ];
+            
+            $this->createUserSession($user);
+            
+            return [
+                'success' => true,
+                'message' => 'Login realizado com sucesso! (Modo Demo)',
+                'redirect' => $this->getRedirectUrl($user['tipo'])
+            ];
+        }
+        
+        return [
+            'success' => false,
+            'message' => 'E-mail ou senha incorretos.'
+        ];
+    }
+    
+    /**
+     * Criar sessão do usuário
+     */
+    private function createUserSession($user) {
+        $_SESSION['user_id'] = $user['id_usuario'];
+        $_SESSION['user_name'] = $user['nome'];
+        $_SESSION['user_email'] = $user['email'];
+        $_SESSION['user_type'] = $user['tipo'];
+        $_SESSION['logged_in'] = true;
+        $_SESSION['login_time'] = time();
+        
+        // Regenerar ID da sessão para segurança
+        session_regenerate_id(true);
+    }
+    
+    /**
+     * Atualizar último acesso
+     */
+    private function updateLastAccess($user_id) {
+        if (!$this->conn) return;
+        
+        try {
+            $stmt = $this->conn->prepare("UPDATE usuarios SET ultimo_acesso = NOW() WHERE id_usuario = ?");
+            $stmt->execute([$user_id]);
+        } catch (Exception $e) {
+            error_log("Erro ao atualizar último acesso: " . $e->getMessage());
+        }
     }
     
     /**
@@ -112,7 +324,7 @@ class AuthController {
      * Verificar se usuário está logado
      */
     public function isLoggedIn() {
-        return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
+        return isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;
     }
     
     /**
@@ -147,26 +359,6 @@ class AuthController {
     }
     
     /**
-     * Redirecionar usuário não autenticado
-     */
-    public function requireAuth() {
-        if (!$this->isLoggedIn()) {
-            header('Location: ' . SITE_URL . '/views/auth/login.php');
-            exit();
-        }
-    }
-    
-    /**
-     * Redirecionar se já estiver logado
-     */
-    public function requireGuest() {
-        if ($this->isLoggedIn()) {
-            header('Location: ' . $this->getRedirectUrl($_SESSION['user_type']));
-            exit();
-        }
-    }
-    
-    /**
      * Obter URL de redirecionamento baseada no tipo de usuário
      */
     private function getRedirectUrl($userType) {
@@ -181,7 +373,7 @@ class AuthController {
     }
     
     /**
-     * Verificar força da sessão (prevenção contra session hijacking)
+     * Validar sessão (prevenção contra session hijacking)
      */
     public function validateSession() {
         if (!$this->isLoggedIn()) {
@@ -189,7 +381,7 @@ class AuthController {
         }
         
         // Verificar se a sessão não expirou (24 horas)
-        $maxLifetime = 24 * 60 * 60; // 24 horas em segundos
+        $maxLifetime = 24 * 60 * 60;
         
         if (isset($_SESSION['login_time']) && 
             (time() - $_SESSION['login_time']) > $maxLifetime) {
