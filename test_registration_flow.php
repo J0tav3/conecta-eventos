@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// TESTE DE FLUXO COMPLETO DE CADASTRO
+// TESTE DE FLUXO COMPLETO DE CADASTRO - CORRIGIDO
 // Local: test_registration_flow.php
 // ==========================================
 
@@ -94,7 +94,7 @@ function testEnvironmentSetup() {
 // ==========================================
 // TESTE 2: Conexão com Banco
 // ==========================================
-function testDatabaseConnection() {
+function testRegistrationDatabaseConnection() {
     try {
         require_once __DIR__ . '/config/database.php';
         
@@ -460,7 +460,7 @@ function testCleanup() {
 // Executar testes se solicitado
 if ($execute_tests) {
     $test_results[] = runTest('1. Preparação do Ambiente', 'testEnvironmentSetup', true);
-    $test_results[] = runTest('2. Conexão com Banco', 'testDatabaseConnection', true);
+    $test_results[] = runTest('2. Conexão com Banco', 'testRegistrationDatabaseConnection', true);
     $test_results[] = runTest('3. AuthController', 'testAuthController', true);
     $test_results[] = runTest('4. Cadastro Válido', 'testValidRegistration', true);
     $test_results[] = runTest('5. Validação de Dados', 'testInvalidRegistration', false);
@@ -831,148 +831,49 @@ if ($execute_tests) {
             </div>
 
         <?php endif; ?>
-        
-        <!-- Informações Técnicas -->
-        <div style="margin-top: 40px; padding: 20px; background: #e3f2fd; border-radius: 10px;">
-            <h4>🔧 Informações Técnicas</h4>
-            <div class="row">
-                <div style="width: 50%; float: left;">
-                    <strong>PHP Version:</strong> <?php echo PHP_VERSION; ?><br>
-                    <strong>Data/Hora:</strong> <?php echo date('d/m/Y H:i:s'); ?><br>
-                    <strong>Servidor:</strong> <?php echo $_SERVER['SERVER_SOFTWARE'] ?? 'Unknown'; ?><br>
-                    <strong>Memória Usada:</strong> <?php echo round(memory_get_usage() / 1024 / 1024, 2); ?> MB
-                </div>
-                <div style="width: 50%; float: right;">
-                    <strong>Domínio:</strong> conecta-eventos-production.up.railway.app<br>
-                    <strong>Ambiente:</strong> <?php echo getenv('RAILWAY_ENVIRONMENT') ?: 'Local'; ?><br>
-                    <strong>Teste ID:</strong> <?php echo substr($test_email, 6, 10); ?><br>
-                    <strong>Status Geral:</strong> <?php echo $execute_tests ? ($overall_success ? '🟢 OK' : '🔴 FALHA') : '⚪ AGUARDANDO'; ?>
-                </div>
-                <div style="clear: both;"></div>
-            </div>
-        </div>
-        
-        <!-- Troubleshooting -->
-        <?php if ($execute_tests && !$overall_success): ?>
-            <div style="margin-top: 40px; padding: 20px; background: #fff3cd; border-radius: 10px; border: 1px solid #ffeaa7;">
-                <h4>🛠️ Guia de Troubleshooting</h4>
-                
-                <h5>Problemas Comuns e Soluções:</h5>
-                <ul>
-                    <li><strong>Erro de Conexão com Banco:</strong>
-                        <ul>
-                            <li>Verificar se DATABASE_URL está configurada no Railway</li>
-                            <li>Executar: <code>railway env</code></li>
-                            <li>Verificar se o MySQL está ativo no Railway</li>
-                        </ul>
-                    </li>
-                    <li><strong>AuthController não encontrado:</strong>
-                        <ul>
-                            <li>Verificar se o arquivo existe em <code>controllers/AuthController.php</code></li>
-                            <li>Verificar permissões de arquivo</li>
-                            <li>Verificar sintaxe PHP no arquivo</li>
-                        </ul>
-                    </li>
-                    <li><strong>Falha na Validação:</strong>
-                        <ul>
-                            <li>Verificar implementação dos métodos de validação</li>
-                            <li>Testar cada campo individualmente</li>
-                            <li>Verificar regex e regras de negócio</li>
-                        </ul>
-                    </li>
-                    <li><strong>Problemas de Sessão:</strong>
-                        <ul>
-                            <li>Verificar configurações de sessão do PHP</li>
-                            <li>Verificar se session_start() está sendo chamado</li>
-                            <li>Verificar permissões de diretório de sessão</li>
-                        </ul>
-                    </li>
-                </ul>
-                
-                <h5>Comandos Úteis para Debug:</h5>
-                <div style="background: #f8f9fa; padding: 10px; border-radius: 5px; font-family: monospace;">
-                    railway logs --follow<br>
-                    railway env<br>
-                    railway connect MySQL<br>
-                    php diagnostic.php<br>
-                    php verification_final.php
-                </div>
-            </div>
-        <?php endif; ?>
-        
-        <!-- Próximos Passos -->
-        <div style="margin-top: 40px; padding: 20px; background: #e8f5e8; border-radius: 10px;">
-            <h4>🎯 Próximos Passos no Plano de Correções</h4>
-            
-            <?php if ($execute_tests && $overall_success): ?>
-                <div style="color: #28a745;">
-                    <h5>✅ PROBLEMA 1 CONCLUÍDO!</h5>
-                    <p>Sistema de cadastro de usuários funcionando. Próximos problemas a resolver:</p>
-                    <ol>
-                        <li><strong>PROBLEMA 2:</strong> Validação Estado/Cidade no cadastro</li>
-                        <li><strong>PROBLEMA 3:</strong> Sistema de inscrições não responde</li>
-                        <li><strong>PROBLEMA 4:</strong> Sistema de favoritos não funciona</li>
-                        <li><strong>PROBLEMA 5:</strong> Edição de eventos com erro</li>
-                    </ol>
-                </div>
-            <?php else: ?>
-                <div style="color: #dc3545;">
-                    <h5>⚠️ PROBLEMA 1 EM ANDAMENTO</h5>
-                    <p>Continue trabalhando na correção do sistema de cadastro antes de avançar:</p>
-                    <ol>
-                        <li>Executar diagnóstico completo</li>
-                        <li>Corrigir problemas identificados nos testes</li>
-                        <li>Executar este teste novamente</li>
-                        <li>Confirmar 100% de sucesso</li>
-                    </ol>
-                </div>
-            <?php endif; ?>
-        </div>
     </div>
 
     <script>
-        // Auto-refresh opcional para testes em andamento
-        <?php if ($execute_tests && !$overall_success): ?>
-        console.log('🔴 Teste falhou. Auto-refresh em 60 segundos...');
-        setTimeout(function() {
-            if (confirm('Alguns testes falharam. Deseja executar novamente?')) {
-                location.reload();
-            }
-        }, 60000);
-        <?php elseif ($execute_tests && $overall_success): ?>
-        console.log('✅ Todos os testes passaram!');
-        
-        // Celebração visual
-        setTimeout(function() {
-            document.body.style.background = 'linear-gradient(135deg, #28a745 0%, #20c997 100%, #17a2b8 200%)';
-        }, 1000);
-        <?php endif; ?>
-
-        // Função para copiar logs
-        function copyLogs() {
-            const logs = document.querySelector('.test-results').innerText;
-            navigator.clipboard.writeText(logs).then(function() {
-                alert('Logs copiados para a área de transferência!');
-            });
-        }
-
-        // Destacar testes críticos
         document.addEventListener('DOMContentLoaded', function() {
-            const criticalTests = document.querySelectorAll('.critical-badge');
-            criticalTests.forEach(badge => {
-                badge.parentElement.parentElement.style.border = '2px solid #dc3545';
-                badge.parentElement.parentElement.style.borderRadius = '10px';
+            // Auto-refresh opcional para testes em andamento
+            <?php if ($execute_tests && !$overall_success): ?>
+            console.log('🔴 Teste falhou. Auto-refresh em 60 segundos...');
+            setTimeout(function() {
+                if (confirm('Alguns testes falharam. Deseja executar novamente?')) {
+                    location.reload();
+                }
+            }, 60000);
+            <?php elseif ($execute_tests && $overall_success): ?>
+            console.log('✅ Todos os testes passaram!');
+            
+            // Celebração visual
+            setTimeout(function() {
+                document.body.style.background = 'linear-gradient(135deg, #28a745 0%, #20c997 100%, #17a2b8 200%)';
+            }, 1000);
+            <?php endif; ?>
+
+            // Animar estatísticas
+            const statNumbers = document.querySelectorAll('.stat-number');
+            statNumbers.forEach(stat => {
+                const text = stat.textContent;
+                if (text.includes('/') || text.includes('%')) return;
+                
+                const number = parseInt(text);
+                if (!isNaN(number)) {
+                    let current = 0;
+                    const increment = number / 30;
+                    const timer = setInterval(() => {
+                        current += increment;
+                        if (current >= number) {
+                            stat.textContent = text;
+                            clearInterval(timer);
+                        } else {
+                            stat.textContent = Math.floor(current);
+                        }
+                    }, 50);
+                }
             });
         });
-
-        // Log de informações para debug
-        console.log('🧪 Teste de Fluxo de Cadastro');
-        console.log('📧 Email de teste: <?php echo $test_email; ?>');
-        console.log('🔄 Executado: <?php echo $execute_tests ? "Sim" : "Não"; ?>');
-        <?php if ($execute_tests): ?>
-        console.log('📊 Taxa de sucesso: <?php echo round($success_rate); ?>%');
-        console.log('✅ Status: <?php echo $overall_success ? "SUCESSO" : "FALHA"; ?>');
-        <?php endif; ?>
     </script>
 </body>
 </html>
