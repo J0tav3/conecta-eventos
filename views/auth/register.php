@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// PÁGINA DE CADASTRO - VERSÃO CORRIGIDA
+// PÁGINA DE CADASTRO - VERSÃO CORRIGIDA E CENTRALIZADA
 // Local: views/auth/register.php
 // ==========================================
 
@@ -94,8 +94,9 @@ $homeUrl = $baseUrl . '/index.php';
             border-radius: 1rem;
             box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
             overflow: hidden;
-            max-width: 900px;
+            max-width: 1000px;
             margin: 2rem auto;
+            min-height: 90vh;
         }
         
         .auth-left {
@@ -106,10 +107,13 @@ $homeUrl = $baseUrl . '/index.php';
             flex-direction: column;
             justify-content: center;
             text-align: center;
+            min-height: 100%;
         }
         
         .auth-right {
             padding: 3rem;
+            overflow-y: auto;
+            max-height: 90vh;
         }
         
         .form-control {
@@ -150,12 +154,26 @@ $homeUrl = $baseUrl . '/index.php';
             display: block;
         }
         
+        .feature-icon {
+            font-size: 2rem;
+            margin-bottom: 1rem;
+            opacity: 0.9;
+        }
+        
         @media (max-width: 768px) {
+            .auth-container {
+                margin: 1rem;
+                max-width: calc(100% - 2rem);
+            }
             .auth-left {
                 padding: 2rem;
             }
             .auth-right {
                 padding: 2rem;
+            }
+            body {
+                align-items: flex-start;
+                padding: 1rem 0;
             }
         }
     </style>
@@ -178,7 +196,7 @@ $homeUrl = $baseUrl . '/index.php';
 
     <div class="container my-5 pt-5">
         <div class="auth-container">
-            <div class="row g-0">
+            <div class="row g-0 h-100">
                 <!-- Lado esquerdo - Informações -->
                 <div class="col-md-5 auth-left">
                     <div>
@@ -192,11 +210,18 @@ $homeUrl = $baseUrl . '/index.php';
                         
                         <div class="row text-center mt-4">
                             <div class="col-6">
-                                <div class="mb-2">
+                                <div class="feature-icon">
                                     <i class="fas fa-calendar-plus fa-2x"></i>
                                 </div>
                                 <h6>Participar</h6>
                                 <small>Inscreva-se em eventos</small>
+                            </div>
+                            <div class="col-6">
+                                <div class="feature-icon">
+                                    <i class="fas fa-users fa-2x"></i>
+                                </div>
+                                <h6>Organizar</h6>
+                                <small>Crie e gerencie eventos</small>
                             </div>
                         </div>
                         
@@ -376,7 +401,7 @@ $homeUrl = $baseUrl . '/index.php';
                                        placeholder="Digite sua cidade">
                                 <small class="form-text text-muted">
                                     <i class="fas fa-info-circle me-1"></i>
-                                    Selecione primeiro o estado para validação automática
+                                    Selecione primeiro o estado para sugestões automáticas
                                 </small>
                             </div>
                         </div>
@@ -421,33 +446,33 @@ $homeUrl = $baseUrl . '/index.php';
     <script>
         // Dados de cidades por estado (principais cidades)
         const cidadesPorEstado = {
-            'AC': ['Rio Branco', 'Cruzeiro do Sul', 'Sena Madureira'],
-            'AL': ['Maceió', 'Arapiraca', 'Palmeira dos Índios'],
-            'AP': ['Macapá', 'Santana', 'Laranjal do Jari'],
-            'AM': ['Manaus', 'Parintins', 'Itacoatiara'],
-            'BA': ['Salvador', 'Feira de Santana', 'Vitória da Conquista'],
-            'CE': ['Fortaleza', 'Caucaia', 'Juazeiro do Norte'],
-            'DF': ['Brasília', 'Taguatinga', 'Ceilândia'],
-            'ES': ['Vitória', 'Serra', 'Vila Velha'],
-            'GO': ['Goiânia', 'Aparecida de Goiânia', 'Anápolis'],
-            'MA': ['São Luís', 'Imperatriz', 'Timon'],
-            'MT': ['Cuiabá', 'Várzea Grande', 'Rondonópolis'],
-            'MS': ['Campo Grande', 'Dourados', 'Três Lagoas'],
-            'MG': ['Belo Horizonte', 'Uberlândia', 'Contagem'],
-            'PA': ['Belém', 'Ananindeua', 'Santarém'],
-            'PB': ['João Pessoa', 'Campina Grande', 'Santa Rita'],
-            'PR': ['Curitiba', 'Londrina', 'Maringá'],
-            'PE': ['Recife', 'Jaboatão dos Guararapes', 'Olinda'],
-            'PI': ['Teresina', 'Parnaíba', 'Picos'],
-            'RJ': ['Rio de Janeiro', 'São Gonçalo', 'Duque de Caxias'],
-            'RN': ['Natal', 'Mossoró', 'Parnamirim'],
-            'RS': ['Porto Alegre', 'Caxias do Sul', 'Pelotas'],
-            'RO': ['Porto Velho', 'Ji-Paraná', 'Ariquemes'],
-            'RR': ['Boa Vista', 'Rorainópolis', 'Caracaraí'],
-            'SC': ['Florianópolis', 'Joinville', 'Blumenau'],
-            'SP': ['São Paulo', 'Guarulhos', 'Campinas'],
-            'SE': ['Aracaju', 'Nossa Senhora do Socorro', 'Lagarto'],
-            'TO': ['Palmas', 'Araguaína', 'Gurupi']
+            'AC': ['Rio Branco', 'Cruzeiro do Sul', 'Sena Madureira', 'Tarauacá', 'Feijó'],
+            'AL': ['Maceió', 'Arapiraca', 'Palmeira dos Índios', 'Rio Largo', 'Penedo'],
+            'AP': ['Macapá', 'Santana', 'Laranjal do Jari', 'Oiapoque', 'Mazagão'],
+            'AM': ['Manaus', 'Parintins', 'Itacoatiara', 'Manacapuru', 'Coari'],
+            'BA': ['Salvador', 'Feira de Santana', 'Vitória da Conquista', 'Camaçari', 'Juazeiro', 'Ilhéus', 'Itabuna'],
+            'CE': ['Fortaleza', 'Caucaia', 'Juazeiro do Norte', 'Sobral', 'Crato'],
+            'DF': ['Brasília', 'Taguatinga', 'Ceilândia', 'Águas Claras', 'Samambaia'],
+            'ES': ['Vitória', 'Serra', 'Vila Velha', 'Cariacica', 'Cachoeiro de Itapemirim'],
+            'GO': ['Goiânia', 'Aparecida de Goiânia', 'Anápolis', 'Rio Verde', 'Luziânia'],
+            'MA': ['São Luís', 'Imperatriz', 'Timon', 'Caxias', 'Codó'],
+            'MT': ['Cuiabá', 'Várzea Grande', 'Rondonópolis', 'Sinop', 'Tangará da Serra'],
+            'MS': ['Campo Grande', 'Dourados', 'Três Lagoas', 'Corumbá', 'Ponta Porã'],
+            'MG': ['Belo Horizonte', 'Uberlândia', 'Contagem', 'Juiz de Fora', 'Betim', 'Montes Claros'],
+            'PA': ['Belém', 'Ananindeua', 'Santarém', 'Marabá', 'Parauapebas'],
+            'PB': ['João Pessoa', 'Campina Grande', 'Santa Rita', 'Patos', 'Bayeux'],
+            'PR': ['Curitiba', 'Londrina', 'Maringá', 'Ponta Grossa', 'Cascavel', 'São José dos Pinhais'],
+            'PE': ['Recife', 'Jaboatão dos Guararapes', 'Olinda', 'Caruaru', 'Petrolina'],
+            'PI': ['Teresina', 'Parnaíba', 'Picos', 'Piripiri', 'Floriano'],
+            'RJ': ['Rio de Janeiro', 'São Gonçalo', 'Duque de Caxias', 'Nova Iguaçu', 'Niterói', 'Campos dos Goytacazes'],
+            'RN': ['Natal', 'Mossoró', 'Parnamirim', 'São Gonçalo do Amarante', 'Macaíba'],
+            'RS': ['Porto Alegre', 'Caxias do Sul', 'Pelotas', 'Canoas', 'Santa Maria', 'Gravataí'],
+            'RO': ['Porto Velho', 'Ji-Paraná', 'Ariquemes', 'Vilhena', 'Cacoal'],
+            'RR': ['Boa Vista', 'Rorainópolis', 'Caracaraí', 'Alto Alegre', 'Mucajaí'],
+            'SC': ['Florianópolis', 'Joinville', 'Blumenau', 'São José', 'Criciúma', 'Chapecó'],
+            'SP': ['São Paulo', 'Guarulhos', 'Campinas', 'São Bernardo do Campo', 'Santo André', 'Osasco', 'Ribeirão Preto'],
+            'SE': ['Aracaju', 'Nossa Senhora do Socorro', 'Lagarto', 'Itabaiana', 'Estância'],
+            'TO': ['Palmas', 'Araguaína', 'Gurupi', 'Porto Nacional', 'Paraíso do Tocantins']
         };
 
         document.addEventListener('DOMContentLoaded', function() {
@@ -617,11 +642,4 @@ $homeUrl = $baseUrl . '/index.php';
         }
     </script>
 </body>
-</html>>Organizar Eventos</h6>
-                                <small>Crie e gerencie seus eventos</small>
-                            </div>
-                            <div class="col-6">
-                                <div class="mb-2">
-                                    <i class="fas fa-users fa-2x"></i>
-                                </div>
-                                <h6
+</html>
