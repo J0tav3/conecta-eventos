@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// PÁGINA DE CADASTRO - VERSÃO COMPACTA IGUAL AO LOGIN
+// PÁGINA DE CADASTRO - VERSÃO CORRIGIDA
 // Local: views/auth/register.php
 // ==========================================
 
@@ -24,6 +24,9 @@ $success_message = '';
 // Processar formulário
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     try {
+        // Log para debug
+        error_log("Register form submitted with data: " . json_encode($_POST));
+        
         // Tentar incluir os arquivos necessários
         $config_loaded = false;
         $auth_loaded = false;
@@ -32,37 +35,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (file_exists('../../config/config.php')) {
             require_once '../../config/config.php';
             $config_loaded = true;
+            error_log("Config loaded successfully");
+        } else {
+            error_log("Config file not found");
         }
         
         // Tentar carregar controller
         if (file_exists('../../controllers/AuthController.php')) {
             require_once '../../controllers/AuthController.php';
             $auth_loaded = true;
+            error_log("AuthController loaded successfully");
+        } else {
+            error_log("AuthController file not found");
         }
         
-        if ($config_loaded && $auth_loaded) {
+        if ($config_loaded && $auth_loaded && class_exists('AuthController')) {
             // Sistema completo disponível
+            error_log("Creating AuthController instance");
             $authController = new AuthController();
+            
+            error_log("Calling register method");
             $result = $authController->register($_POST);
+            
+            error_log("Register result: " . json_encode($result));
             
             if ($result['success']) {
                 $success_message = $result['message'];
                 
                 // Se tem redirect, usar
                 if (isset($result['redirect'])) {
+                    error_log("Redirecting to: " . $result['redirect']);
                     header('Location: ' . $result['redirect']);
                     exit;
                 }
             } else {
                 $error_message = $result['message'];
+                error_log("Register failed: " . $result['message']);
             }
         } else {
             // Sistema limitado - não conseguiu carregar dependências
             $error_message = "Sistema temporariamente indisponível. Tente novamente mais tarde.";
+            error_log("System components not available - config_loaded: $config_loaded, auth_loaded: $auth_loaded");
         }
     } catch (Exception $e) {
-        error_log("Erro no cadastro: " . $e->getMessage());
-        $error_message = "Erro interno do sistema. Tente novamente.";
+        error_log("Exception in register: " . $e->getMessage());
+        error_log("Exception trace: " . $e->getTraceAsString());
+        $error_message = "Erro interno do sistema: " . $e->getMessage();
     }
 }
 
@@ -145,15 +163,6 @@ $homeUrl = $baseUrl . '/index.php';
             font-size: 2rem;
             margin-bottom: 1rem;
             opacity: 0.9;
-        }
-        
-        /* Remover feedback de validação até o usuário interagir */
-        .form-control.is-invalid:not(.user-interacted) {
-            border-color: #e9ecef;
-        }
-        
-        .form-select.is-invalid:not(.user-interacted) {
-            border-color: #e9ecef;
         }
         
         .invalid-feedback {
@@ -424,33 +433,9 @@ $homeUrl = $baseUrl . '/index.php';
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
-        // Dados de cidades por estado (principais apenas)
-        const cidadesPorEstado = {
-            'SP': ['São Paulo', 'Guarulhos', 'Campinas', 'São Bernardo do Campo', 'Santo André'],
-            'RJ': ['Rio de Janeiro', 'São Gonçalo', 'Duque de Caxias', 'Nova Iguaçu', 'Niterói'],
-            'MG': ['Belo Horizonte', 'Uberlândia', 'Contagem', 'Juiz de Fora', 'Betim'],
-            'PR': ['Curitiba', 'Londrina', 'Maringá', 'Ponta Grossa', 'Cascavel'],
-            'RS': ['Porto Alegre', 'Caxias do Sul', 'Pelotas', 'Canoas', 'Santa Maria'],
-            'SC': ['Florianópolis', 'Joinville', 'Blumenau', 'São José', 'Criciúma'],
-            'BA': ['Salvador', 'Feira de Santana', 'Vitória da Conquista', 'Camaçari', 'Juazeiro'],
-            'GO': ['Goiânia', 'Aparecida de Goiânia', 'Anápolis', 'Rio Verde', 'Luziânia'],
-            'DF': ['Brasília', 'Taguatinga', 'Ceilândia', 'Águas Claras', 'Samambaia'],
-            'PE': ['Recife', 'Jaboatão dos Guararapes', 'Olinda', 'Caruaru', 'Petrolina'],
-            'CE': ['Fortaleza', 'Caucaia', 'Juazeiro do Norte', 'Sobral', 'Crato'],
-            'ES': ['Vitória', 'Serra', 'Vila Velha', 'Cariacica', 'Cachoeiro de Itapemirim']
-        };
-
         document.addEventListener('DOMContentLoaded', function() {
-            const form = document.getElementById('registerForm');
-            const estadoSelect = document.getElementById('estado');
-            const cidadeInput = document.getElementById('cidade');
-            const senha = document.getElementById('senha');
-            const confirmaSenha = document.getElementById('confirma_senha');
-            const togglePassword = document.getElementById('togglePassword');
-            const telefone = document.getElementById('telefone');
-
             // Marcar campos como "interagidos" apenas após o usuário focar neles
-            const allInputs = form.querySelectorAll('input, select');
+            const allInputs = document.querySelectorAll('input, select');
             allInputs.forEach(input => {
                 input.addEventListener('blur', function() {
                     this.classList.add('user-interacted');
@@ -458,7 +443,8 @@ $homeUrl = $baseUrl . '/index.php';
             });
 
             // Toggle password visibility
-            togglePassword.addEventListener('click', function() {
+            document.getElementById('togglePassword').addEventListener('click', function() {
+                const senha = document.getElementById('senha');
                 const type = senha.getAttribute('type') === 'password' ? 'text' : 'password';
                 senha.setAttribute('type', type);
                 
@@ -467,34 +453,11 @@ $homeUrl = $baseUrl . '/index.php';
                 icon.classList.toggle('fa-eye-slash');
             });
 
-            // Sistema estado/cidade
-            estadoSelect.addEventListener('change', function() {
-                const estado = this.value;
-                cidadeInput.value = '';
-                
-                if (estado && cidadesPorEstado[estado]) {
-                    cidadeInput.setAttribute('list', 'cidades');
-                    
-                    let datalist = document.getElementById('cidades');
-                    if (!datalist) {
-                        datalist = document.createElement('datalist');
-                        datalist.id = 'cidades';
-                        document.body.appendChild(datalist);
-                    }
-                    
-                    datalist.innerHTML = '';
-                    cidadesPorEstado[estado].forEach(cidade => {
-                        const option = document.createElement('option');
-                        option.value = cidade;
-                        datalist.appendChild(option);
-                    });
-                } else {
-                    cidadeInput.removeAttribute('list');
-                }
-            });
-
             // Validação de senhas
             function validatePasswords() {
+                const senha = document.getElementById('senha');
+                const confirmaSenha = document.getElementById('confirma_senha');
+                
                 if (confirmaSenha.classList.contains('user-interacted')) {
                     if (senha.value !== confirmaSenha.value) {
                         confirmaSenha.setCustomValidity('As senhas não coincidem');
@@ -506,11 +469,11 @@ $homeUrl = $baseUrl . '/index.php';
                 }
             }
             
-            senha.addEventListener('input', validatePasswords);
-            confirmaSenha.addEventListener('input', validatePasswords);
+            document.getElementById('senha').addEventListener('input', validatePasswords);
+            document.getElementById('confirma_senha').addEventListener('input', validatePasswords);
 
             // Máscara de telefone
-            telefone.addEventListener('input', function(e) {
+            document.getElementById('telefone').addEventListener('input', function(e) {
                 let value = e.target.value.replace(/\D/g, '');
                 if (value.length > 0) {
                     value = value.replace(/(\d{2})(\d)/, '($1) $2');
@@ -520,14 +483,14 @@ $homeUrl = $baseUrl . '/index.php';
             });
 
             // Validação customizada do formulário
-            form.addEventListener('submit', function(e) {
+            document.getElementById('registerForm').addEventListener('submit', function(e) {
                 e.preventDefault();
                 e.stopPropagation();
 
                 let isValid = true;
 
                 // Marcar todos como interagidos e validar
-                const requiredFields = form.querySelectorAll('[required]');
+                const requiredFields = document.querySelectorAll('[required]');
                 requiredFields.forEach(field => {
                     field.classList.add('user-interacted');
                     if (!field.value.trim()) {
@@ -547,6 +510,8 @@ $homeUrl = $baseUrl . '/index.php';
                 }
 
                 // Validar senhas
+                const senha = document.getElementById('senha');
+                const confirmaSenha = document.getElementById('confirma_senha');
                 if (senha.value !== confirmaSenha.value) {
                     confirmaSenha.classList.add('is-invalid');
                     isValid = false;
@@ -560,7 +525,7 @@ $homeUrl = $baseUrl . '/index.php';
                     submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Criando conta...';
                     
                     // Submeter formulário
-                    form.submit();
+                    this.submit();
                 }
             });
 

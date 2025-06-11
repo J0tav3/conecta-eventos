@@ -88,6 +88,8 @@ class AuthController {
      * Processar cadastro
      */
     public function register($data) {
+        error_log("AuthController::register - Dados recebidos: " . json_encode($data));
+        
         $nome = trim($data['nome'] ?? '');
         $email = trim($data['email'] ?? '');
         $senha = $data['senha'] ?? '';
@@ -100,6 +102,7 @@ class AuthController {
         // Validações básicas
         $validation = $this->validateRegistration($data);
         if (!$validation['valid']) {
+            error_log("AuthController::register - Validação falhou: " . $validation['message']);
             return [
                 'success' => false,
                 'message' => $validation['message']
@@ -108,6 +111,7 @@ class AuthController {
         
         // Verificar se tem conexão com banco
         if (!$this->conn) {
+            error_log("AuthController::register - Sem conexão com banco");
             return [
                 'success' => false,
                 'message' => 'Sistema temporariamente indisponível. Tente novamente mais tarde.'
@@ -115,37 +119,49 @@ class AuthController {
         }
         
         try {
+            error_log("AuthController::register - Verificando email existente");
+            
             // Verificar se email já existe
             $stmt = $this->conn->prepare("SELECT id_usuario FROM usuarios WHERE email = ?");
             $stmt->execute([$email]);
             
             if ($stmt->rowCount() > 0) {
+                error_log("AuthController::register - Email já existe: " . $email);
                 return [
                     'success' => false,
                     'message' => 'Este e-mail já está cadastrado. Tente fazer login ou use outro e-mail.'
                 ];
             }
             
+            error_log("AuthController::register - Email disponível, criando usuário");
+            
             // Criar usuário
             $senha_hash = password_hash($senha, PASSWORD_DEFAULT);
             
-            $stmt = $this->conn->prepare("
-                INSERT INTO usuarios (nome, email, senha, tipo, telefone, cidade, estado, ativo) 
-                VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-            ");
+            $sql = "INSERT INTO usuarios (nome, email, senha, tipo, telefone, cidade, estado, ativo) VALUES (?, ?, ?, ?, ?, ?, ?, 1)";
+            $stmt = $this->conn->prepare($sql);
+            
+            error_log("AuthController::register - SQL preparado: " . $sql);
+            error_log("AuthController::register - Parâmetros: " . json_encode([
+                $nome, $email, '[SENHA_HASH]', $tipo_usuario, $telefone, $cidade, $estado
+            ]));
             
             $result = $stmt->execute([
                 $nome, 
                 $email, 
                 $senha_hash, 
                 $tipo_usuario,
-                $telefone,
-                $cidade,
-                $estado
+                $telefone ?: null,
+                $cidade ?: null,
+                $estado ?: null
             ]);
             
-            if ($result) {
+            error_log("AuthController::register - Resultado da execução: " . ($result ? 'success' : 'failed'));
+            error_log("AuthController::register - Rows affected: " . $stmt->rowCount());
+            
+            if ($result && $stmt->rowCount() > 0) {
                 $user_id = $this->conn->lastInsertId();
+                error_log("AuthController::register - Usuário criado com ID: " . $user_id);
                 
                 // Fazer login automático
                 $new_user = [
@@ -164,16 +180,23 @@ class AuthController {
                 ];
             }
             
+            error_log("AuthController::register - Falha ao inserir usuário - result: " . var_export($result, true));
+            
+            // Verificar erro específico
+            $errorInfo = $stmt->errorInfo();
+            error_log("AuthController::register - Error info: " . json_encode($errorInfo));
+            
             return [
                 'success' => false,
-                'message' => 'Erro ao criar conta. Tente novamente.'
+                'message' => 'Erro ao criar conta. Detalhes: ' . ($errorInfo[2] ?? 'Erro desconhecido')
             ];
             
         } catch (Exception $e) {
-            error_log("Erro no cadastro: " . $e->getMessage());
+            error_log("AuthController::register - Exception: " . $e->getMessage());
+            error_log("AuthController::register - Exception trace: " . $e->getTraceAsString());
             return [
                 'success' => false,
-                'message' => 'Erro interno do sistema. Tente novamente mais tarde.'
+                'message' => 'Erro interno do sistema: ' . $e->getMessage()
             ];
         }
     }
@@ -275,6 +298,8 @@ class AuthController {
         $_SESSION['user_type'] = $user['tipo'];
         $_SESSION['logged_in'] = true;
         $_SESSION['login_time'] = time();
+        
+        error_log("AuthController::createUserSession - Sessão criada para usuário: " . $user['nome']);
         
         // Regenerar ID da sessão para segurança
         session_regenerate_id(true);
