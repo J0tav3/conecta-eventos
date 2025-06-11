@@ -71,7 +71,7 @@ $cor_avatar = $usuario_logado ? getAvatarColor($nome_usuario) : '#007bff';
     <meta property="og:description" content="<?php echo isset($page_description) ? $page_description : 'Descubra e participe dos melhores eventos'; ?>">
     <meta property="og:type" content="website">
     <meta property="og:url" content="<?php echo 'https://' . $_SERVER['HTTP_HOST'] . $_SERVER['REQUEST_URI']; ?>">
-    <meta property="og:image" content="https://conecta-eventos-production.up.railway.app/assets/images/og-image.jpg">
+    <meta property="og:image" content="https://conecta-eventos-production.up.railway.app/public/images/og-image.jpg">
     
     <!-- Schema.org -->
     <script type="application/ld+json">
