@@ -1,14 +1,20 @@
 <?php
 // ==========================================
-// API PARA AÇÕES DE EVENTOS
+// API PARA AÇÕES DE EVENTOS - VERSÃO ATUALIZADA
 // Local: api/event-actions.php
 // ==========================================
 
 session_start();
 header('Content-Type: application/json');
 header('Access-Control-Allow-Origin: *');
-header('Access-Control-Allow-Methods: POST, GET, PUT, DELETE');
+header('Access-Control-Allow-Methods: POST, GET, PUT, DELETE, OPTIONS');
 header('Access-Control-Allow-Headers: Content-Type');
+
+// Handle preflight requests
+if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
+    http_response_code(200);
+    exit();
+}
 
 // Verificar se está logado e é organizador
 if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
@@ -27,7 +33,7 @@ require_once '../config/database.php';
 require_once '../controllers/EventController.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
-$action = $_GET['action'] ?? '';
+$action = $_GET['action'] ?? $_POST['action'] ?? '';
 $eventId = $_GET['id'] ?? $_POST['id'] ?? 0;
 
 $eventController = new EventController();
@@ -35,6 +41,19 @@ $userId = $_SESSION['user_id'];
 
 try {
     switch ($method) {
+        case 'GET':
+            switch ($action) {
+                case 'get_event':
+                    $result = getEventForEdit($eventController, $eventId, $userId);
+                    break;
+                case 'get_stats':
+                    $result = getEventStats($eventController, $eventId, $userId);
+                    break;
+                default:
+                    throw new Exception('Ação GET não reconhecida');
+            }
+            break;
+            
         case 'POST':
             switch ($action) {
                 case 'publish':
@@ -46,15 +65,21 @@ try {
                 case 'delete':
                     $result = deleteEvent($eventController, $eventId, $userId);
                     break;
+                case 'duplicate':
+                    $result = duplicateEvent($eventController, $eventId, $userId);
+                    break;
+                case 'update':
+                    $result = updateEvent($eventController, $eventId, $userId, $_POST);
+                    break;
                 default:
-                    throw new Exception('Ação não reconhecida');
+                    throw new Exception('Ação POST não reconhecida');
             }
             break;
             
         case 'PUT':
             $input = json_decode(file_get_contents('php://input'), true);
-            $eventId = $input['id'] ?? 0;
-            $action = $input['action'] ?? '';
+            $eventId = $input['id'] ?? $eventId;
+            $action = $input['action'] ?? $action;
             
             switch ($action) {
                 case 'publish':
@@ -62,6 +87,9 @@ try {
                     break;
                 case 'unpublish':
                     $result = unpublishEvent($eventController, $eventId, $userId);
+                    break;
+                case 'update':
+                    $result = updateEvent($eventController, $eventId, $userId, $input);
                     break;
                 default:
                     throw new Exception('Ação PUT não reconhecida');
@@ -84,6 +112,86 @@ try {
         'success' => false,
         'message' => $e->getMessage()
     ]);
+}
+
+/**
+ * Buscar evento para edição
+ */
+function getEventForEdit($eventController, $eventId, $userId) {
+    if (!$eventController->canEdit($eventId)) {
+        return ['success' => false, 'message' => 'Você não tem permissão para editar este evento'];
+    }
+    
+    $evento = $eventController->getById($eventId);
+    if (!$evento) {
+        return ['success' => false, 'message' => 'Evento não encontrado'];
+    }
+    
+    $categorias = $eventController->getCategories();
+    $stats = $eventController->getEventStats($eventId);
+    
+    return [
+        'success' => true,
+        'evento' => $evento,
+        'categorias' => $categorias,
+        'stats' => $stats
+    ];
+}
+
+/**
+ * Obter estatísticas do evento
+ */
+function getEventStats($eventController, $eventId, $userId) {
+    if (!$eventController->canEdit($eventId)) {
+        return ['success' => false, 'message' => 'Você não tem permissão para ver estatísticas deste evento'];
+    }
+    
+    $stats = $eventController->getEventStats($eventId);
+    
+    return [
+        'success' => true,
+        'stats' => $stats
+    ];
+}
+
+/**
+ * Atualizar evento
+ */
+function updateEvent($eventController, $eventId, $userId, $data) {
+    if (!$eventController->canEdit($eventId)) {
+        return ['success' => false, 'message' => 'Você não tem permissão para editar este evento'];
+    }
+    
+    // Validar dados obrigatórios
+    $required_fields = ['titulo', 'descricao', 'data_inicio', 'horario_inicio', 'local_nome', 'local_endereco', 'local_cidade', 'local_estado'];
+    foreach ($required_fields as $field) {
+        if (empty($data[$field])) {
+            return ['success' => false, 'message' => "Campo obrigatório: $field"];
+        }
+    }
+    
+    // Validar data
+    if (strtotime($data['data_inicio']) < strtotime(date('Y-m-d'))) {
+        return ['success' => false, 'message' => 'A data do evento deve ser futura'];
+    }
+    
+    // Validar preço se não for gratuito
+    if (!isset($data['evento_gratuito']) && (!isset($data['preco']) || $data['preco'] < 0)) {
+        return ['success' => false, 'message' => 'Preço deve ser informado para eventos pagos'];
+    }
+    
+    $result = $eventController->update($eventId, $data);
+    
+    if ($result['success']) {
+        // Log da ação
+        error_log("Evento atualizado - ID: $eventId, Usuário: $userId");
+        
+        // Buscar dados atualizados
+        $eventoAtualizado = $eventController->getById($eventId);
+        $result['evento'] = $eventoAtualizado;
+    }
+    
+    return $result;
 }
 
 /**
@@ -113,6 +221,12 @@ function publishEvent($eventController, $eventId, $userId) {
         
         if ($evento['status'] === 'publicado') {
             return ['success' => false, 'message' => 'Este evento já está publicado'];
+        }
+        
+        // Validar se o evento tem dados suficientes para publicação
+        $validation = validateEventForPublication($conn, $eventId);
+        if (!$validation['valid']) {
+            return ['success' => false, 'message' => $validation['message']];
         }
         
         // Atualizar status para publicado
@@ -257,7 +371,11 @@ function deleteEvent($eventController, $eventId, $userId) {
         $stmt = $conn->prepare("DELETE FROM notificacoes WHERE id_referencia = ? AND tipo = 'evento'");
         $stmt->execute([$eventId]);
         
-        // 4. Finalmente, excluir o evento
+        // 4. Excluir logs do evento
+        $stmt = $conn->prepare("DELETE FROM event_logs WHERE id_evento = ?");
+        $stmt->execute([$eventId]);
+        
+        // 5. Finalmente, excluir o evento
         $stmt = $conn->prepare("DELETE FROM eventos WHERE id_evento = ?");
         $result = $stmt->execute([$eventId]);
         
@@ -281,6 +399,125 @@ function deleteEvent($eventController, $eventId, $userId) {
         $conn->rollback();
         error_log("Erro ao excluir evento: " . $e->getMessage());
         return ['success' => false, 'message' => 'Erro interno: ' . $e->getMessage()];
+    }
+}
+
+/**
+ * Duplicar evento
+ */
+function duplicateEvent($eventController, $eventId, $userId) {
+    if (!$eventController->canEdit($eventId)) {
+        return ['success' => false, 'message' => 'Você não tem permissão para duplicar este evento'];
+    }
+    
+    $database = Database::getInstance();
+    $conn = $database->getConnection();
+    
+    if (!$conn) {
+        return ['success' => false, 'message' => 'Erro de conexão com banco de dados'];
+    }
+    
+    try {
+        $conn->beginTransaction();
+        
+        // Buscar evento original
+        $stmt = $conn->prepare("SELECT * FROM eventos WHERE id_evento = ? AND id_organizador = ?");
+        $stmt->execute([$eventId, $userId]);
+        $evento = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$evento) {
+            $conn->rollback();
+            return ['success' => false, 'message' => 'Evento não encontrado'];
+        }
+        
+        // Preparar dados para duplicação
+        unset($evento['id_evento']);
+        $evento['titulo'] = $evento['titulo'] . ' (Cópia)';
+        $evento['status'] = 'rascunho';
+        $evento['data_criacao'] = date('Y-m-d H:i:s');
+        $evento['data_atualizacao'] = date('Y-m-d H:i:s');
+        
+        // Ajustar data para próxima semana
+        $evento['data_inicio'] = date('Y-m-d', strtotime($evento['data_inicio'] . ' +1 week'));
+        $evento['data_fim'] = date('Y-m-d', strtotime($evento['data_fim'] . ' +1 week'));
+        
+        // Inserir evento duplicado
+        $campos = array_keys($evento);
+        $placeholders = ':' . implode(', :', $campos);
+        $sql = "INSERT INTO eventos (" . implode(', ', $campos) . ") VALUES (" . $placeholders . ")";
+        
+        $stmt = $conn->prepare($sql);
+        $result = $stmt->execute($evento);
+        
+        if ($result) {
+            $newEventId = $conn->lastInsertId();
+            $conn->commit();
+            
+            error_log("Evento duplicado - Original: $eventId, Novo: $newEventId, Organizador: $userId");
+            
+            return [
+                'success' => true,
+                'message' => 'Evento duplicado com sucesso!',
+                'new_event_id' => $newEventId,
+                'new_event_title' => $evento['titulo']
+            ];
+        } else {
+            $conn->rollback();
+            return ['success' => false, 'message' => 'Erro ao duplicar evento'];
+        }
+        
+    } catch (Exception $e) {
+        $conn->rollback();
+        error_log("Erro ao duplicar evento: " . $e->getMessage());
+        return ['success' => false, 'message' => 'Erro interno: ' . $e->getMessage()];
+    }
+}
+
+/**
+ * Validar evento para publicação
+ */
+function validateEventForPublication($conn, $eventId) {
+    try {
+        $stmt = $conn->prepare("SELECT * FROM eventos WHERE id_evento = ?");
+        $stmt->execute([$eventId]);
+        $evento = $stmt->fetch(PDO::FETCH_ASSOC);
+        
+        if (!$evento) {
+            return ['valid' => false, 'message' => 'Evento não encontrado'];
+        }
+        
+        // Validações obrigatórias
+        $required_fields = [
+            'titulo' => 'Título',
+            'descricao' => 'Descrição',
+            'data_inicio' => 'Data de início',
+            'horario_inicio' => 'Horário de início',
+            'local_nome' => 'Nome do local',
+            'local_endereco' => 'Endereço',
+            'local_cidade' => 'Cidade',
+            'local_estado' => 'Estado'
+        ];
+        
+        foreach ($required_fields as $field => $label) {
+            if (empty($evento[$field])) {
+                return ['valid' => false, 'message' => "Campo obrigatório não preenchido: $label"];
+            }
+        }
+        
+        // Validar data futura
+        if (strtotime($evento['data_inicio']) < strtotime(date('Y-m-d'))) {
+            return ['valid' => false, 'message' => 'A data do evento deve ser futura'];
+        }
+        
+        // Validar preço para eventos pagos
+        if (!$evento['evento_gratuito'] && $evento['preco'] <= 0) {
+            return ['valid' => false, 'message' => 'Preço deve ser informado para eventos pagos'];
+        }
+        
+        return ['valid' => true, 'message' => 'Evento válido para publicação'];
+        
+    } catch (Exception $e) {
+        return ['valid' => false, 'message' => 'Erro ao validar evento: ' . $e->getMessage()];
     }
 }
 ?>
