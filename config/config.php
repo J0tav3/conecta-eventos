@@ -28,53 +28,7 @@ ini_set('session.cookie_httponly', 1);
 ini_set('session.cookie_secure', 1);
 ini_set('session.use_strict_mode', 1);
 
-// Classe Database
-class Database {
-    private $connection;
-    
-    public function getConnection() {
-        if ($this->connection === null) {
-            try {
-                $database_url = getenv('DATABASE_URL');
-                
-                if (!$database_url) {
-                    throw new Exception('DATABASE_URL não configurada');
-                }
-                
-                // Parse da URL
-                $url_parts = parse_url($database_url);
-                
-                if (!$url_parts) {
-                    throw new Exception('DATABASE_URL mal formatada');
-                }
-                
-                $host = $url_parts['host'] ?? '';
-                $port = $url_parts['port'] ?? 3306;
-                $database = ltrim($url_parts['path'] ?? '', '/');
-                $username = $url_parts['user'] ?? '';
-                $password = $url_parts['pass'] ?? '';
-                
-                $dsn = "mysql:host={$host};port={$port};dbname={$database};charset=utf8mb4";
-                
-                $options = [
-                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                    PDO::ATTR_EMULATE_PREPARES => false,
-                    PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4",
-                    PDO::ATTR_TIMEOUT => 10
-                ];
-                
-                $this->connection = new PDO($dsn, $username, $password, $options);
-                
-            } catch (Exception $e) {
-                error_log("Erro de conexão com banco: " . $e->getMessage());
-                throw $e;
-            }
-        }
-        
-        return $this->connection;
-    }
-}
+// CLASSE DATABASE REMOVIDA DAQUI - ESTÁ EM config/database.php
 
 // Função para sanitizar dados
 function sanitizeInput($data) {
