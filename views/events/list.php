@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// MEUS EVENTOS - VERSÃO CORRIGIDA
+// MEUS EVENTOS - VERSÃO COMPLETA COM AÇÕES
 // Local: views/events/list.php
 // ==========================================
 
@@ -33,6 +33,22 @@ $categoria_filter = $_GET['categoria'] ?? '';
 // Buscar eventos do organizador atual
 $meus_eventos = [];
 $error_message = '';
+$success_message = '';
+
+// Verificar se houve uma ação realizada
+if (isset($_GET['action'])) {
+    switch ($_GET['action']) {
+        case 'published':
+            $success_message = "Evento publicado com sucesso!";
+            break;
+        case 'unpublished':
+            $success_message = "Evento despublicado com sucesso!";
+            break;
+        case 'deleted':
+            $success_message = "Evento excluído com sucesso!";
+            break;
+    }
+}
 
 try {
     require_once '../../controllers/EventController.php';
@@ -53,8 +69,6 @@ try {
 } catch (Exception $e) {
     error_log("Erro ao carregar eventos: " . $e->getMessage());
     $error_message = "Erro ao carregar eventos. Tente novamente.";
-    
-    // Dados de fallback apenas se houver erro
     $meus_eventos = [];
 }
 
@@ -158,9 +172,68 @@ $total_participantes = array_sum(array_column($meus_eventos, 'total_inscritos'))
             padding: 3rem 1rem;
             color: #6c757d;
         }
+        
+        /* Loading overlay */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            backdrop-filter: blur(2px);
+        }
+        
+        .loading-spinner {
+            text-align: center;
+            color: white;
+        }
+        
+        /* Confirmação de ação */
+        .action-loading {
+            opacity: 0.7;
+            pointer-events: none;
+        }
+        
+        .action-loading .dropdown-toggle {
+            position: relative;
+        }
+        
+        .action-loading .dropdown-toggle::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 16px;
+            height: 16px;
+            border: 2px solid #ccc;
+            border-top: 2px solid #007bff;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: translate(-50%, -50%) rotate(0deg); }
+            100% { transform: translate(-50%, -50%) rotate(360deg); }
+        }
     </style>
 </head>
 <body>
+    <!-- Loading Overlay -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="loading-spinner">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Carregando...</span>
+            </div>
+            <div class="mt-3">Processando...</div>
+        </div>
+    </div>
+
     <!-- Header -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
@@ -211,11 +284,19 @@ $total_participantes = array_sum(array_column($meus_eventos, 'total_inscritos'))
     </section>
 
     <div class="container pb-5">
-        <!-- Mensagem de Erro -->
+        <!-- Mensagens -->
         <?php if ($error_message): ?>
             <div class="alert alert-warning alert-dismissible fade show" role="alert">
                 <i class="fas fa-exclamation-triangle me-2"></i>
                 <?php echo htmlspecialchars($error_message); ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        <?php endif; ?>
+
+        <?php if ($success_message): ?>
+            <div class="alert alert-success alert-dismissible fade show" role="alert">
+                <i class="fas fa-check-circle me-2"></i>
+                <?php echo htmlspecialchars($success_message); ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
             </div>
         <?php endif; ?>
@@ -334,7 +415,7 @@ $total_participantes = array_sum(array_column($meus_eventos, 'total_inscritos'))
             </div>
         <?php else: ?>
             <?php foreach ($meus_eventos as $evento): ?>
-                <div class="event-card">
+                <div class="event-card" data-event-id="<?php echo $evento['id_evento']; ?>">
                     <div class="row align-items-center">
                         <div class="col-md-6">
                             <div class="d-flex align-items-start mb-2">
@@ -412,23 +493,27 @@ $total_participantes = array_sum(array_column($meus_eventos, 'total_inscritos'))
                                         </a>
                                     </li>
                                     <li><hr class="dropdown-divider"></li>
+                                    
                                     <?php if ($evento['status'] === 'rascunho'): ?>
                                         <li>
-                                            <a class="dropdown-item text-success" href="#" onclick="publishEvent(<?php echo $evento['id_evento']; ?>)">
+                                            <a class="dropdown-item text-success" href="#" 
+                                               onclick="publishEvent(<?php echo $evento['id_evento']; ?>, '<?php echo htmlspecialchars($evento['titulo']); ?>')">
                                                 <i class="fas fa-check me-2"></i>Publicar
                                             </a>
                                         </li>
                                     <?php endif; ?>
+                                    
                                     <?php if ($evento['status'] === 'publicado'): ?>
                                         <li>
-                                            <a class="dropdown-item text-warning" href="#" onclick="unpublishEvent(<?php echo $evento['id_evento']; ?>)">
+                                            <a class="dropdown-item text-warning" href="#" 
+                                               onclick="unpublishEvent(<?php echo $evento['id_evento']; ?>, '<?php echo htmlspecialchars($evento['titulo']); ?>')">
                                                 <i class="fas fa-pause me-2"></i>Despublicar
                                             </a>
                                         </li>
                                     <?php endif; ?>
+                                    
                                     <li>
-                                        <a class="dropdown-item text-danger" 
-                                           href="#"
+                                        <a class="dropdown-item text-danger" href="#"
                                            onclick="deleteEvent(<?php echo $evento['id_evento']; ?>, '<?php echo htmlspecialchars($evento['titulo']); ?>')">
                                             <i class="fas fa-trash me-2"></i>Excluir
                                         </a>
@@ -445,6 +530,9 @@ $total_participantes = array_sum(array_column($meus_eventos, 'total_inscritos'))
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
+        // Configurações da API
+        const API_BASE = '../../api/event-actions.php';
+        
         document.addEventListener('DOMContentLoaded', function() {
             // Animação das estatísticas
             const statNumbers = document.querySelectorAll('.stat-card h3');
@@ -486,26 +574,156 @@ $total_participantes = array_sum(array_column($meus_eventos, 'total_inscritos'))
             });
         });
 
+        // Função para mostrar loading
+        function showLoading(show = true) {
+            const overlay = document.getElementById('loadingOverlay');
+            overlay.style.display = show ? 'flex' : 'none';
+        }
+
         // Função para publicar evento
-        function publishEvent(eventId) {
-            if (confirm('Tem certeza que deseja publicar este evento?')) {
-                showToast('Funcionalidade em desenvolvimento', 'info');
+        function publishEvent(eventId, title) {
+            if (confirm(`Tem certeza que deseja publicar o evento "${title}"?\n\nApós publicado, ele ficará visível para todos os usuários.`)) {
+                showLoading(true);
+                
+                // Adicionar classe de loading ao card
+                const eventCard = document.querySelector(`[data-event-id="${eventId}"]`);
+                if (eventCard) {
+                    eventCard.classList.add('action-loading');
+                }
+                
+                fetch(API_BASE, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `action=publish&id=${eventId}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    showLoading(false);
+                    if (eventCard) {
+                        eventCard.classList.remove('action-loading');
+                    }
+                    
+                    if (data.success) {
+                        showToast(data.message, 'success');
+                        setTimeout(() => {
+                            window.location.href = 'list.php?action=published';
+                        }, 1500);
+                    } else {
+                        showToast(data.message, 'error');
+                    }
+                })
+                .catch(error => {
+                    showLoading(false);
+                    if (eventCard) {
+                        eventCard.classList.remove('action-loading');
+                    }
+                    showToast('Erro de conexão. Tente novamente.', 'error');
+                    console.error('Erro:', error);
+                });
             }
         }
 
         // Função para despublicar evento
-        function unpublishEvent(eventId) {
-            if (confirm('Tem certeza que deseja despublicar este evento?')) {
-                showToast('Funcionalidade em desenvolvimento', 'info');
+        function unpublishEvent(eventId, title) {
+            if (confirm(`Tem certeza que deseja despublicar o evento "${title}"?\n\nEle deixará de ser visível para os usuários, mas não será excluído.`)) {
+                showLoading(true);
+                
+                const eventCard = document.querySelector(`[data-event-id="${eventId}"]`);
+                if (eventCard) {
+                    eventCard.classList.add('action-loading');
+                }
+                
+                fetch(API_BASE, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                    },
+                    body: `action=unpublish&id=${eventId}`
+                })
+                .then(response => response.json())
+                .then(data => {
+                    showLoading(false);
+                    if (eventCard) {
+                        eventCard.classList.remove('action-loading');
+                    }
+                    
+                    if (data.success) {
+                        showToast(data.message, 'success');
+                        setTimeout(() => {
+                            window.location.href = 'list.php?action=unpublished';
+                        }, 1500);
+                    } else {
+                        showToast(data.message, 'error');
+                    }
+                })
+                .catch(error => {
+                    showLoading(false);
+                    if (eventCard) {
+                        eventCard.classList.remove('action-loading');
+                    }
+                    showToast('Erro de conexão. Tente novamente.', 'error');
+                    console.error('Erro:', error);
+                });
             }
         }
 
         // Função para excluir evento
         function deleteEvent(eventId, title) {
-            if (confirm(`Tem certeza que deseja excluir o evento "${title}"?\n\nEsta ação não pode ser desfeita.`)) {
-                showToast('Funcionalidade em desenvolvimento', 'warning');
-                // Aqui você implementaria a exclusão via API
+            // Primeiro aviso
+            if (!confirm(`⚠️ ATENÇÃO: Você está prestes a EXCLUIR PERMANENTEMENTE o evento "${title}".\n\nEsta ação NÃO PODE ser desfeita!\n\nTem certeza que deseja continuar?`)) {
+                return;
             }
+            
+            // Segundo aviso - confirmação final
+            const confirmText = prompt(`Para confirmar a exclusão, digite "EXCLUIR" (em maiúsculas):`);
+            
+            if (confirmText !== 'EXCLUIR') {
+                if (confirmText !== null) {
+                    showToast('Exclusão cancelada - texto de confirmação incorreto.', 'warning');
+                }
+                return;
+            }
+            
+            showLoading(true);
+            
+            const eventCard = document.querySelector(`[data-event-id="${eventId}"]`);
+            if (eventCard) {
+                eventCard.classList.add('action-loading');
+            }
+            
+            fetch(API_BASE, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
+                body: `action=delete&id=${eventId}`
+            })
+            .then(response => response.json())
+            .then(data => {
+                showLoading(false);
+                if (eventCard) {
+                    eventCard.classList.remove('action-loading');
+                }
+                
+                if (data.success) {
+                    showToast(data.message, 'success');
+                    setTimeout(() => {
+                        window.location.href = 'list.php?action=deleted';
+                    }, 1500);
+                } else {
+                    showToast(data.message, 'error');
+                }
+            })
+            .catch(error => {
+                showLoading(false);
+                if (eventCard) {
+                    eventCard.classList.remove('action-loading');
+                }
+                showToast('Erro de conexão. Tente novamente.', 'error');
+                console.error('Erro:', error);
+            });
         }
 
         // Sistema de toast notifications
@@ -515,7 +733,7 @@ $total_participantes = array_sum(array_column($meus_eventos, 'total_inscritos'))
             toast.style.cssText = `
                 top: 20px;
                 right: 20px;
-                z-index: 9999;
+                z-index: 10000;
                 min-width: 300px;
                 max-width: 400px;
                 box-shadow: 0 4px 15px rgba(0,0,0,0.2);
@@ -526,7 +744,8 @@ $total_participantes = array_sum(array_column($meus_eventos, 'total_inscritos'))
                 success: 'fas fa-check-circle',
                 info: 'fas fa-info-circle',
                 warning: 'fas fa-exclamation-triangle',
-                danger: 'fas fa-exclamation-circle'
+                danger: 'fas fa-exclamation-circle',
+                error: 'fas fa-exclamation-circle'
             };
             
             toast.innerHTML = `
@@ -537,29 +756,65 @@ $total_participantes = array_sum(array_column($meus_eventos, 'total_inscritos'))
 
             document.body.appendChild(toast);
 
+            // Auto-remove após 5 segundos
             setTimeout(() => {
                 if (toast.parentNode) {
-                    toast.remove();
+                    const bsAlert = bootstrap.Alert.getOrCreateInstance(toast);
+                    bsAlert.close();
                 }
             }, 5000);
         }
 
-        // CSS para animação
-        const style = document.createElement('style');
-        style.textContent = `
-            @keyframes slideInRight {
-                from {
-                    transform: translateX(100%);
+        // CSS para animações
+        if (!document.getElementById('custom-animations')) {
+            const style = document.createElement('style');
+            style.id = 'custom-animations';
+            style.textContent = `
+                @keyframes slideInRight {
+                    from {
+                        transform: translateX(100%);
+                        opacity: 0;
+                    }
+                    to {
+                        transform: translateX(0);
+                        opacity: 1;
+                    }
+                }
+                
+                .action-loading {
+                    opacity: 0.7;
+                    pointer-events: none;
+                }
+                
+                .action-loading .dropdown-toggle {
+                    position: relative;
+                }
+                
+                .action-loading .dropdown-toggle i {
                     opacity: 0;
                 }
-                to {
-                    transform: translateX(0);
-                    opacity: 1;
+                
+                .action-loading .dropdown-toggle::after {
+                    content: '';
+                    position: absolute;
+                    top: 50%;
+                    left: 50%;
+                    transform: translate(-50%, -50%);
+                    width: 16px;
+                    height: 16px;
+                    border: 2px solid #ccc;
+                    border-top: 2px solid #007bff;
+                    border-radius: 50%;
+                    animation: spin 1s linear infinite;
                 }
-            }
-        `;
-        document.head.appendChild(style);
+                
+                @keyframes spin {
+                    0% { transform: translate(-50%, -50%) rotate(0deg); }
+                    100% { transform: translate(-50%, -50%) rotate(360deg); }
+                }
+            `;
+            document.head.appendChild(style);
+        }
     </script>
 </body>
 </html>
-?>
