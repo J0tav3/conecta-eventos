@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// EVENT CONTROLLER - VERSÃO COM BANCO REAL
+// EVENT CONTROLLER - VERSÃO CORRIGIDA COMPLETA
 // Local: controllers/EventController.php
 // ==========================================
 
@@ -9,6 +9,7 @@ require_once __DIR__ . '/../config/database.php';
 class EventController {
     private $db;
     private $conn;
+    private $debug = true;
 
     public function __construct() {
         try {
@@ -18,9 +19,17 @@ class EventController {
             if (!$this->conn) {
                 throw new Exception("Falha ao conectar com o banco de dados");
             }
+            
+            $this->log("EventController conectado ao banco");
         } catch (Exception $e) {
-            error_log("EventController: Erro ao conectar: " . $e->getMessage());
+            $this->log("Erro ao conectar: " . $e->getMessage());
             throw $e;
+        }
+    }
+    
+    private function log($message) {
+        if ($this->debug) {
+            error_log("[EventController] " . $message);
         }
     }
 
@@ -29,6 +38,7 @@ class EventController {
      */
     public function getPublicEvents($params = []) {
         if (!$this->conn) {
+            $this->log("Sem conexão - retornando eventos de exemplo");
             return $this->getExampleEvents($params);
         }
 
@@ -44,7 +54,7 @@ class EventController {
                      FROM eventos e
                      LEFT JOIN categorias c ON e.id_categoria = c.id_categoria
                      LEFT JOIN usuarios u ON e.id_organizador = u.id_usuario
-                     LEFT JOIN inscricoes i ON e.id_evento = i.id_evento
+                     LEFT JOIN inscricoes i ON e.id_evento = i.id_evento AND i.status = 'confirmada'
                      WHERE e.status = 'publicado'
                      AND e.data_inicio >= CURDATE()";
 
@@ -77,6 +87,7 @@ class EventController {
                 $query .= " LIMIT " . $limite;
             }
 
+            $this->log("Executando query: " . $query);
             $stmt = $this->conn->prepare($query);
 
             // Bind dos parâmetros
@@ -100,11 +111,12 @@ class EventController {
 
             $stmt->execute();
             $eventos = $stmt->fetchAll(PDO::FETCH_ASSOC);
-
+            
+            $this->log("Encontrados " . count($eventos) . " eventos");
             return $eventos ?: [];
 
         } catch (Exception $e) {
-            error_log("Erro ao buscar eventos: " . $e->getMessage());
+            $this->log("Erro ao buscar eventos: " . $e->getMessage());
             return $this->getExampleEvents($params);
         }
     }
@@ -123,10 +135,11 @@ class EventController {
             $stmt->execute();
             
             $categorias = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            $this->log("Encontradas " . count($categorias) . " categorias");
             return $categorias ?: $this->getExampleCategories();
 
         } catch (Exception $e) {
-            error_log("Erro ao buscar categorias: " . $e->getMessage());
+            $this->log("Erro ao buscar categorias: " . $e->getMessage());
             return $this->getExampleCategories();
         }
     }
@@ -149,7 +162,7 @@ class EventController {
                      FROM eventos e
                      LEFT JOIN categorias c ON e.id_categoria = c.id_categoria
                      LEFT JOIN usuarios u ON e.id_organizador = u.id_usuario
-                     LEFT JOIN inscricoes i ON e.id_evento = i.id_evento
+                     LEFT JOIN inscricoes i ON e.id_evento = i.id_evento AND i.status = 'confirmada'
                      WHERE e.id_evento = :id
                      GROUP BY e.id_evento";
 
@@ -157,10 +170,12 @@ class EventController {
             $stmt->bindParam(':id', $id);
             $stmt->execute();
 
-            return $stmt->fetch(PDO::FETCH_ASSOC);
+            $evento = $stmt->fetch(PDO::FETCH_ASSOC);
+            $this->log("Evento encontrado: " . ($evento ? $evento['titulo'] : 'não encontrado'));
+            return $evento;
 
         } catch (Exception $e) {
-            error_log("Erro ao buscar evento: " . $e->getMessage());
+            $this->log("Erro ao buscar evento: " . $e->getMessage());
             return null;
         }
     }
@@ -170,25 +185,32 @@ class EventController {
      */
     public function create($data) {
         if (!$this->conn) {
+            $this->log("Sem conexão com banco");
             return ['success' => false, 'message' => 'Banco de dados indisponível'];
         }
 
         try {
-            // Validar dados obrigatórios
-            $required = ['titulo', 'descricao', 'data_inicio', 'horario_inicio', 'local_nome', 'local_endereco', 'local_cidade', 'local_estado'];
-            foreach ($required as $field) {
-                if (empty($data[$field])) {
-                    return ['success' => false, 'message' => "Campo obrigatório: $field"];
-                }
-            }
-
+            $this->log("Iniciando criação de evento");
+            $this->log("Dados recebidos: " . json_encode(array_keys($data)));
+            
             // Verificar se usuário está logado
             session_start();
             if (!isset($_SESSION['user_id'])) {
+                $this->log("Usuário não logado");
                 return ['success' => false, 'message' => 'Usuário não logado'];
             }
 
             $organizador_id = $_SESSION['user_id'];
+            $this->log("Organizador ID: " . $organizador_id);
+
+            // Validar dados obrigatórios
+            $required = ['titulo', 'descricao', 'data_inicio', 'horario_inicio', 'local_nome', 'local_endereco', 'local_cidade', 'local_estado'];
+            foreach ($required as $field) {
+                if (empty($data[$field])) {
+                    $this->log("Campo obrigatório ausente: " . $field);
+                    return ['success' => false, 'message' => "Campo obrigatório: $field"];
+                }
+            }
 
             // Preparar dados
             $titulo = trim($data['titulo']);
@@ -209,56 +231,89 @@ class EventController {
             $requisitos = !empty($data['requisitos']) ? trim($data['requisitos']) : null;
             $informacoes_adicionais = !empty($data['o_que_levar']) ? trim($data['o_que_levar']) : null;
 
+            $this->log("Dados preparados para inserção");
+
             // SQL de inserção
             $sql = "INSERT INTO eventos (
                         id_organizador, id_categoria, titulo, descricao, 
                         data_inicio, data_fim, horario_inicio, horario_fim,
                         local_nome, local_endereco, local_cidade, local_estado, local_cep,
                         evento_gratuito, preco, capacidade_maxima,
-                        requisitos, informacoes_adicionais, status
+                        requisitos, informacoes_adicionais, status, data_criacao
                     ) VALUES (
                         :organizador_id, :categoria_id, :titulo, :descricao,
                         :data_inicio, :data_fim, :horario_inicio, :horario_fim,
                         :local_nome, :local_endereco, :local_cidade, :local_estado, :local_cep,
                         :evento_gratuito, :preco, :capacidade_maxima,
-                        :requisitos, :informacoes_adicionais, 'rascunho'
+                        :requisitos, :informacoes_adicionais, 'rascunho', NOW()
                     )";
 
             $stmt = $this->conn->prepare($sql);
 
             // Bind dos parâmetros
-            $stmt->bindParam(':organizador_id', $organizador_id);
-            $stmt->bindParam(':categoria_id', $id_categoria);
-            $stmt->bindParam(':titulo', $titulo);
-            $stmt->bindParam(':descricao', $descricao);
-            $stmt->bindParam(':data_inicio', $data_inicio);
-            $stmt->bindParam(':data_fim', $data_fim);
-            $stmt->bindParam(':horario_inicio', $horario_inicio);
-            $stmt->bindParam(':horario_fim', $horario_fim);
-            $stmt->bindParam(':local_nome', $local_nome);
-            $stmt->bindParam(':local_endereco', $local_endereco);
-            $stmt->bindParam(':local_cidade', $local_cidade);
-            $stmt->bindParam(':local_estado', $local_estado);
-            $stmt->bindParam(':local_cep', $local_cep);
-            $stmt->bindParam(':evento_gratuito', $evento_gratuito);
-            $stmt->bindParam(':preco', $preco);
-            $stmt->bindParam(':capacidade_maxima', $capacidade_maxima);
-            $stmt->bindParam(':requisitos', $requisitos);
-            $stmt->bindParam(':informacoes_adicionais', $informacoes_adicionais);
+            $params = [
+                ':organizador_id' => $organizador_id,
+                ':categoria_id' => $id_categoria,
+                ':titulo' => $titulo,
+                ':descricao' => $descricao,
+                ':data_inicio' => $data_inicio,
+                ':data_fim' => $data_fim,
+                ':horario_inicio' => $horario_inicio,
+                ':horario_fim' => $horario_fim,
+                ':local_nome' => $local_nome,
+                ':local_endereco' => $local_endereco,
+                ':local_cidade' => $local_cidade,
+                ':local_estado' => $local_estado,
+                ':local_cep' => $local_cep,
+                ':evento_gratuito' => $evento_gratuito,
+                ':preco' => $preco,
+                ':capacidade_maxima' => $capacidade_maxima,
+                ':requisitos' => $requisitos,
+                ':informacoes_adicionais' => $informacoes_adicionais
+            ];
 
-            if ($stmt->execute()) {
+            $this->log("Executando INSERT com parâmetros: " . json_encode([
+                'organizador_id' => $organizador_id,
+                'titulo' => $titulo,
+                'categoria_id' => $id_categoria,
+                'data_inicio' => $data_inicio,
+                'local_cidade' => $local_cidade
+            ]));
+
+            $result = $stmt->execute($params);
+            
+            $this->log("INSERT result: " . ($result ? 'TRUE' : 'FALSE'));
+            $this->log("Affected rows: " . $stmt->rowCount());
+
+            if ($result && $stmt->rowCount() > 0) {
                 $evento_id = $this->conn->lastInsertId();
-                return [
-                    'success' => true,
-                    'message' => 'Evento criado com sucesso!',
-                    'evento_id' => $evento_id
-                ];
+                $this->log("Evento criado com ID: " . $evento_id);
+                
+                // Verificar se foi realmente inserido
+                $verify_stmt = $this->conn->prepare("SELECT id_evento, titulo FROM eventos WHERE id_evento = ?");
+                $verify_stmt->execute([$evento_id]);
+                $inserted_event = $verify_stmt->fetch();
+                
+                if ($inserted_event) {
+                    $this->log("Evento verificado no banco: " . $inserted_event['titulo']);
+                    return [
+                        'success' => true,
+                        'message' => 'Evento criado com sucesso!',
+                        'evento_id' => $evento_id
+                    ];
+                } else {
+                    $this->log("ERRO: Evento não encontrado após inserção");
+                    return ['success' => false, 'message' => 'Erro ao verificar evento criado'];
+                }
             } else {
+                $errorInfo = $stmt->errorInfo();
+                $this->log("ERRO na inserção: " . json_encode($errorInfo));
                 return ['success' => false, 'message' => 'Erro ao criar evento'];
             }
 
         } catch (Exception $e) {
-            error_log("Erro ao criar evento: " . $e->getMessage());
+            $this->log("Exception ao criar evento: " . $e->getMessage());
+            $this->log("Stack trace: " . $e->getTraceAsString());
             return ['success' => false, 'message' => 'Erro interno: ' . $e->getMessage()];
         }
     }
@@ -283,8 +338,108 @@ class EventController {
 
             return $evento && $evento['id_organizador'] == $_SESSION['user_id'];
         } catch (Exception $e) {
-            error_log("Erro ao verificar permissão: " . $e->getMessage());
+            $this->log("Erro ao verificar permissão: " . $e->getMessage());
             return false;
+        }
+    }
+
+    /**
+     * Atualizar evento
+     */
+    public function update($evento_id, $data) {
+        if (!$this->conn) {
+            return ['success' => false, 'message' => 'Banco de dados indisponível'];
+        }
+
+        try {
+            // Verificar permissão
+            if (!$this->canEdit($evento_id)) {
+                return ['success' => false, 'message' => 'Você não tem permissão para editar este evento'];
+            }
+
+            // Preparar dados
+            $titulo = trim($data['titulo']);
+            $descricao = trim($data['descricao']);
+            $id_categoria = !empty($data['id_categoria']) ? (int)$data['id_categoria'] : null;
+            $data_inicio = $data['data_inicio'];
+            $data_fim = $data['data_fim'];
+            $horario_inicio = $data['horario_inicio'];
+            $horario_fim = $data['horario_fim'];
+            $local_nome = trim($data['local_nome']);
+            $local_endereco = trim($data['local_endereco']);
+            $local_cidade = trim($data['local_cidade']);
+            $local_estado = $data['local_estado'];
+            $local_cep = $data['local_cep'] ?: null;
+            $evento_gratuito = isset($data['evento_gratuito']) ? 1 : 0;
+            $preco = $evento_gratuito ? 0 : (float)($data['preco'] ?? 0);
+            $capacidade_maxima = !empty($data['capacidade_maxima']) ? (int)$data['capacidade_maxima'] : null;
+            $requisitos = !empty($data['requisitos']) ? trim($data['requisitos']) : null;
+            $informacoes_adicionais = !empty($data['informacoes_adicionais']) ? trim($data['informacoes_adicionais']) : null;
+            $status = $data['status'] ?? 'rascunho';
+            $destaque = isset($data['destaque']) ? 1 : 0;
+
+            $sql = "UPDATE eventos SET 
+                        titulo = :titulo,
+                        descricao = :descricao,
+                        id_categoria = :categoria_id,
+                        data_inicio = :data_inicio,
+                        data_fim = :data_fim,
+                        horario_inicio = :horario_inicio,
+                        horario_fim = :horario_fim,
+                        local_nome = :local_nome,
+                        local_endereco = :local_endereco,
+                        local_cidade = :local_cidade,
+                        local_estado = :local_estado,
+                        local_cep = :local_cep,
+                        evento_gratuito = :evento_gratuito,
+                        preco = :preco,
+                        capacidade_maxima = :capacidade_maxima,
+                        requisitos = :requisitos,
+                        informacoes_adicionais = :informacoes_adicionais,
+                        status = :status,
+                        destaque = :destaque,
+                        data_atualizacao = NOW()
+                    WHERE id_evento = :evento_id";
+
+            $stmt = $this->conn->prepare($sql);
+
+            $params = [
+                ':titulo' => $titulo,
+                ':descricao' => $descricao,
+                ':categoria_id' => $id_categoria,
+                ':data_inicio' => $data_inicio,
+                ':data_fim' => $data_fim,
+                ':horario_inicio' => $horario_inicio,
+                ':horario_fim' => $horario_fim,
+                ':local_nome' => $local_nome,
+                ':local_endereco' => $local_endereco,
+                ':local_cidade' => $local_cidade,
+                ':local_estado' => $local_estado,
+                ':local_cep' => $local_cep,
+                ':evento_gratuito' => $evento_gratuito,
+                ':preco' => $preco,
+                ':capacidade_maxima' => $capacidade_maxima,
+                ':requisitos' => $requisitos,
+                ':informacoes_adicionais' => $informacoes_adicionais,
+                ':status' => $status,
+                ':destaque' => $destaque,
+                ':evento_id' => $evento_id
+            ];
+
+            $result = $stmt->execute($params);
+
+            if ($result && $stmt->rowCount() > 0) {
+                return [
+                    'success' => true,
+                    'message' => 'Evento atualizado com sucesso!'
+                ];
+            } else {
+                return ['success' => false, 'message' => 'Nenhuma alteração foi feita'];
+            }
+
+        } catch (Exception $e) {
+            $this->log("Erro ao atualizar evento: " . $e->getMessage());
+            return ['success' => false, 'message' => 'Erro interno: ' . $e->getMessage()];
         }
     }
 
@@ -330,7 +485,7 @@ class EventController {
                         COUNT(i.id_inscricao) as total_inscritos
                      FROM eventos e
                      LEFT JOIN categorias c ON e.id_categoria = c.id_categoria
-                     LEFT JOIN inscricoes i ON e.id_evento = i.id_evento
+                     LEFT JOIN inscricoes i ON e.id_evento = i.id_evento AND i.status = 'confirmada'
                      WHERE e.id_organizador = :organizador_id";
 
             // Aplicar filtros
@@ -359,8 +514,35 @@ class EventController {
             return $stmt->fetchAll(PDO::FETCH_ASSOC);
 
         } catch (Exception $e) {
-            error_log("Erro ao buscar eventos do organizador: " . $e->getMessage());
+            $this->log("Erro ao buscar eventos do organizador: " . $e->getMessage());
             return [];
+        }
+    }
+
+    /**
+     * Teste de conexão
+     */
+    public function testConnection() {
+        if (!$this->conn) {
+            return [
+                'success' => false,
+                'message' => 'Sem conexão com banco'
+            ];
+        }
+        
+        try {
+            $stmt = $this->conn->query("SELECT COUNT(*) as total FROM eventos");
+            $result = $stmt->fetch();
+            
+            return [
+                'success' => true,
+                'message' => 'Conexão OK - ' . $result['total'] . ' eventos no banco'
+            ];
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'message' => 'Erro no teste: ' . $e->getMessage()
+            ];
         }
     }
 

@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// AUTH CONTROLLER - VERSÃO CORRIGIDA RAILWAY
+// AUTH CONTROLLER - VERSÃO CORRIGIDA COMPLETA
 // Local: controllers/AuthController.php
 // ==========================================
 
@@ -8,6 +8,7 @@ require_once __DIR__ . '/../config/database.php';
 
 class AuthController {
     private $conn;
+    private $debug = true; // Ativar logs detalhados
     
     public function __construct() {
         // Iniciar sessão se não estiver iniciada
@@ -21,15 +22,21 @@ class AuthController {
             $this->conn = $database->getConnection();
             
             if (!$this->conn) {
-                error_log("AuthController: Falha ao conectar com banco");
+                $this->log("ERRO: Falha ao conectar com banco");
                 throw new Exception("Falha na conexão com banco de dados");
             }
             
-            error_log("AuthController: Conectado com sucesso ao banco");
+            $this->log("SUCCESS: Conectado com banco de dados");
             
         } catch (Exception $e) {
-            error_log("AuthController: Erro ao conectar: " . $e->getMessage());
+            $this->log("ERRO ao conectar: " . $e->getMessage());
             throw $e;
+        }
+    }
+    
+    private function log($message) {
+        if ($this->debug) {
+            error_log("[AuthController] " . $message);
         }
     }
     
@@ -40,7 +47,7 @@ class AuthController {
         $email = trim($data['email'] ?? '');
         $senha = $data['senha'] ?? '';
         
-        error_log("AuthController::login - Tentativa de login: " . $email);
+        $this->log("Tentativa de login: " . $email);
         
         // Validar entrada
         if (empty($email) || empty($senha)) {
@@ -51,7 +58,7 @@ class AuthController {
         }
         
         if (!$this->conn) {
-            error_log("AuthController::login - Sem conexão com banco");
+            $this->log("ERRO: Sem conexão com banco");
             return [
                 'success' => false,
                 'message' => 'Sistema temporariamente indisponível.'
@@ -67,26 +74,37 @@ class AuthController {
             ");
             $stmt->execute([$email]);
             
-            error_log("AuthController::login - Query executada, rows: " . $stmt->rowCount());
+            $this->log("Query executada, rows: " . $stmt->rowCount());
             
             if ($stmt->rowCount() > 0) {
                 $user = $stmt->fetch();
                 
-                error_log("AuthController::login - Usuário encontrado: " . $user['nome']);
-                error_log("AuthController::login - Verificando senha...");
+                $this->log("Usuário encontrado: " . $user['nome']);
+                $this->log("Hash no banco: " . substr($user['senha'], 0, 20) . "...");
+                $this->log("Senha fornecida: " . $senha);
+                
+                // DEBUG: Testar diferentes métodos de verificação
+                $verify_result = password_verify($senha, $user['senha']);
+                $this->log("password_verify result: " . ($verify_result ? 'TRUE' : 'FALSE'));
+                
+                // Verificar se o hash parece válido
+                $hash_info = password_get_info($user['senha']);
+                $this->log("Hash info: " . json_encode($hash_info));
+                
+                // Tentar verificação direta também (para debug)
+                $direct_match = ($senha === $user['senha']);
+                $this->log("Direct match (plain text): " . ($direct_match ? 'TRUE' : 'FALSE'));
                 
                 // Verificar senha
-                if (password_verify($senha, $user['senha'])) {
-                    error_log("AuthController::login - Senha correta!");
+                if ($verify_result) {
+                    $this->log("Senha correta - criando sessão");
                     
                     $this->createUserSession($user);
-                    
-                    // Atualizar último acesso
                     $this->updateLastAccess($user['id_usuario']);
                     
                     $redirectUrl = $this->getRedirectUrl($user['tipo']);
                     
-                    error_log("AuthController::login - Login bem-sucedido, redirecionando para: " . $redirectUrl);
+                    $this->log("Login bem-sucedido, redirecionando para: " . $redirectUrl);
                     
                     return [
                         'success' => true,
@@ -94,16 +112,38 @@ class AuthController {
                         'redirect' => $redirectUrl
                     ];
                 } else {
-                    error_log("AuthController::login - Senha incorreta");
+                    $this->log("Senha incorreta");
+                    
+                    // Se a senha não funciona com hash, mas o usuário existe,
+                    // vamos recriar o hash (pode ser um problema de migração)
+                    if ($direct_match) {
+                        $this->log("Detectada senha em texto plano - atualizando hash");
+                        $new_hash = password_hash($senha, PASSWORD_DEFAULT);
+                        
+                        $update_stmt = $this->conn->prepare("UPDATE usuarios SET senha = ? WHERE id_usuario = ?");
+                        $update_stmt->execute([$new_hash, $user['id_usuario']]);
+                        
+                        $this->log("Hash atualizado - fazendo login");
+                        
+                        $this->createUserSession($user);
+                        $this->updateLastAccess($user['id_usuario']);
+                        
+                        return [
+                            'success' => true,
+                            'message' => 'Login realizado com sucesso!',
+                            'redirect' => $this->getRedirectUrl($user['tipo'])
+                        ];
+                    }
+                    
                     return ['success' => false, 'message' => 'Senha incorreta.'];
                 }
             } else {
-                error_log("AuthController::login - Usuário não encontrado");
+                $this->log("Usuário não encontrado ou inativo");
                 return ['success' => false, 'message' => 'E-mail não encontrado ou usuário inativo.'];
             }
             
         } catch (Exception $e) {
-            error_log("AuthController::login - Exception: " . $e->getMessage());
+            $this->log("Exception: " . $e->getMessage());
             return [
                 'success' => false,
                 'message' => 'Erro interno do sistema: ' . $e->getMessage()
@@ -115,8 +155,7 @@ class AuthController {
      * Processar cadastro
      */
     public function register($data) {
-        error_log("AuthController::register - Iniciando cadastro");
-        error_log("AuthController::register - Dados: " . json_encode(array_keys($data)));
+        $this->log("Iniciando registro");
         
         $nome = trim($data['nome'] ?? '');
         $email = trim($data['email'] ?? '');
@@ -130,7 +169,7 @@ class AuthController {
         // Validações básicas
         $validation = $this->validateRegistration($data);
         if (!$validation['valid']) {
-            error_log("AuthController::register - Validação falhou: " . $validation['message']);
+            $this->log("Validação falhou: " . $validation['message']);
             return [
                 'success' => false,
                 'message' => $validation['message']
@@ -138,7 +177,7 @@ class AuthController {
         }
         
         if (!$this->conn) {
-            error_log("AuthController::register - Sem conexão com banco");
+            $this->log("Sem conexão com banco");
             return [
                 'success' => false,
                 'message' => 'Sistema temporariamente indisponível.'
@@ -146,28 +185,30 @@ class AuthController {
         }
         
         try {
-            error_log("AuthController::register - Verificando email existente: " . $email);
+            $this->log("Verificando email existente: " . $email);
             
             // Verificar se email já existe
             $stmt = $this->conn->prepare("SELECT id_usuario FROM usuarios WHERE email = ?");
             $stmt->execute([$email]);
             
             if ($stmt->rowCount() > 0) {
-                error_log("AuthController::register - Email já existe");
+                $this->log("Email já existe");
                 return [
                     'success' => false,
                     'message' => 'Este e-mail já está cadastrado. Tente fazer login ou use outro e-mail.'
                 ];
             }
             
-            error_log("AuthController::register - Email disponível, criando usuário");
+            $this->log("Email disponível, criando usuário");
             
             // Criar hash da senha
             $senha_hash = password_hash($senha, PASSWORD_DEFAULT);
-            error_log("AuthController::register - Hash da senha criado");
+            $this->log("Hash da senha criado: " . substr($senha_hash, 0, 20) . "...");
             
             // Inserir usuário
-            $sql = "INSERT INTO usuarios (nome, email, senha, tipo, telefone, cidade, estado, ativo) VALUES (?, ?, ?, ?, ?, ?, ?, 1)";
+            $sql = "INSERT INTO usuarios (nome, email, senha, tipo, telefone, cidade, estado, ativo, data_criacao) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW())";
+            
             $stmt = $this->conn->prepare($sql);
             
             $params = [
@@ -180,45 +221,59 @@ class AuthController {
                 $estado ?: null
             ];
             
-            error_log("AuthController::register - Executando INSERT");
-            error_log("AuthController::register - Parâmetros: " . json_encode([
-                $nome, $email, '[SENHA_HASH]', $tipo_usuario, $telefone, $cidade, $estado
+            $this->log("Executando INSERT com parâmetros: " . json_encode([
+                $nome, $email, '[HASH]', $tipo_usuario, $telefone, $cidade, $estado
             ]));
             
             $result = $stmt->execute($params);
             
-            error_log("AuthController::register - INSERT result: " . ($result ? 'TRUE' : 'FALSE'));
-            error_log("AuthController::register - Affected rows: " . $stmt->rowCount());
+            $this->log("INSERT result: " . ($result ? 'TRUE' : 'FALSE'));
+            $this->log("Affected rows: " . $stmt->rowCount());
             
             if ($result && $stmt->rowCount() > 0) {
                 $user_id = $this->conn->lastInsertId();
-                error_log("AuthController::register - Usuário criado com ID: " . $user_id);
+                $this->log("Usuário criado com ID: " . $user_id);
                 
-                // Dados do novo usuário para sessão
-                $new_user = [
-                    'id_usuario' => $user_id,
-                    'nome' => $nome,
-                    'email' => $email,
-                    'tipo' => $tipo_usuario,
-                    'ativo' => 1
-                ];
+                // Verificar se o usuário foi realmente inserido
+                $verify_stmt = $this->conn->prepare("SELECT * FROM usuarios WHERE id_usuario = ?");
+                $verify_stmt->execute([$user_id]);
+                $inserted_user = $verify_stmt->fetch();
                 
-                // Fazer login automático
-                $this->createUserSession($new_user);
-                
-                error_log("AuthController::register - Sessão criada, cadastro concluído");
-                
-                return [
-                    'success' => true,
-                    'message' => 'Cadastro realizado com sucesso! Bem-vindo ao Conecta Eventos!',
-                    'redirect' => $this->getRedirectUrl($tipo_usuario)
-                ];
+                if ($inserted_user) {
+                    $this->log("Usuário verificado no banco");
+                    
+                    // Dados do novo usuário para sessão
+                    $new_user = [
+                        'id_usuario' => $user_id,
+                        'nome' => $nome,
+                        'email' => $email,
+                        'tipo' => $tipo_usuario,
+                        'ativo' => 1
+                    ];
+                    
+                    // Fazer login automático
+                    $this->createUserSession($new_user);
+                    
+                    $this->log("Sessão criada, cadastro concluído");
+                    
+                    return [
+                        'success' => true,
+                        'message' => 'Cadastro realizado com sucesso! Bem-vindo ao Conecta Eventos!',
+                        'redirect' => $this->getRedirectUrl($tipo_usuario)
+                    ];
+                } else {
+                    $this->log("ERRO: Usuário não encontrado após inserção");
+                    return [
+                        'success' => false,
+                        'message' => 'Erro ao verificar conta criada.'
+                    ];
+                }
             } else {
-                error_log("AuthController::register - Falha ao inserir: rowCount = " . $stmt->rowCount());
+                $this->log("ERRO: Falha ao inserir - rowCount = " . $stmt->rowCount());
                 
                 // Pegar informações de erro
                 $errorInfo = $stmt->errorInfo();
-                error_log("AuthController::register - PDO Error: " . json_encode($errorInfo));
+                $this->log("PDO Error: " . json_encode($errorInfo));
                 
                 return [
                     'success' => false,
@@ -227,8 +282,8 @@ class AuthController {
             }
             
         } catch (Exception $e) {
-            error_log("AuthController::register - Exception: " . $e->getMessage());
-            error_log("AuthController::register - Stack trace: " . $e->getTraceAsString());
+            $this->log("Exception no registro: " . $e->getMessage());
+            $this->log("Stack trace: " . $e->getTraceAsString());
             
             return [
                 'success' => false,
@@ -293,7 +348,7 @@ class AuthController {
         $_SESSION['logged_in'] = true;
         $_SESSION['login_time'] = time();
         
-        error_log("AuthController::createUserSession - Sessão criada para: " . $user['nome']);
+        $this->log("Sessão criada para: " . $user['nome']);
         
         // Regenerar ID da sessão para segurança
         session_regenerate_id(true);
@@ -308,9 +363,9 @@ class AuthController {
         try {
             $stmt = $this->conn->prepare("UPDATE usuarios SET ultimo_acesso = NOW() WHERE id_usuario = ?");
             $stmt->execute([$user_id]);
-            error_log("AuthController::updateLastAccess - Último acesso atualizado para usuário " . $user_id);
+            $this->log("Último acesso atualizado para usuário " . $user_id);
         } catch (Exception $e) {
-            error_log("AuthController::updateLastAccess - Erro: " . $e->getMessage());
+            $this->log("Erro ao atualizar último acesso: " . $e->getMessage());
         }
     }
     
@@ -336,7 +391,7 @@ class AuthController {
         return [
             'success' => true,
             'message' => 'Logout realizado com sucesso!',
-            'redirect' => SITE_URL . '/index.php'
+            'redirect' => 'https://conecta-eventos-production.up.railway.app/index.php'
         ];
     }
     
@@ -382,13 +437,14 @@ class AuthController {
      * Obter URL de redirecionamento baseada no tipo de usuário
      */
     private function getRedirectUrl($userType) {
+        $base_url = 'https://conecta-eventos-production.up.railway.app';
         switch ($userType) {
             case 'organizador':
-                return SITE_URL . '/views/dashboard/organizer.php';
+                return $base_url . '/views/dashboard/organizer.php';
             case 'participante':
-                return SITE_URL . '/views/dashboard/participant.php';
+                return $base_url . '/views/dashboard/participant.php';
             default:
-                return SITE_URL . '/index.php';
+                return $base_url . '/index.php';
         }
     }
     
@@ -436,6 +492,53 @@ class AuthController {
             return [
                 'success' => false,
                 'message' => 'Erro no teste: ' . $e->getMessage()
+            ];
+        }
+    }
+    
+    /**
+     * Corrigir senhas em texto plano (função utilitária)
+     */
+    public function fixPlainTextPasswords() {
+        if (!$this->conn) {
+            return ['success' => false, 'message' => 'Sem conexão'];
+        }
+        
+        try {
+            // Buscar usuários com senhas que não parecem hash
+            $stmt = $this->conn->prepare("
+                SELECT id_usuario, email, senha 
+                FROM usuarios 
+                WHERE LENGTH(senha) < 50 OR senha NOT LIKE '$%'
+            ");
+            $stmt->execute();
+            $users = $stmt->fetchAll();
+            
+            $fixed = 0;
+            foreach ($users as $user) {
+                $new_hash = password_hash($user['senha'], PASSWORD_DEFAULT);
+                
+                $update_stmt = $this->conn->prepare("
+                    UPDATE usuarios 
+                    SET senha = ? 
+                    WHERE id_usuario = ?
+                ");
+                $update_stmt->execute([$new_hash, $user['id_usuario']]);
+                $fixed++;
+                
+                $this->log("Senha corrigida para usuário: " . $user['email']);
+            }
+            
+            return [
+                'success' => true,
+                'message' => "Corrigidas {$fixed} senhas",
+                'fixed_count' => $fixed
+            ];
+            
+        } catch (Exception $e) {
+            return [
+                'success' => false,
+                'message' => 'Erro: ' . $e->getMessage()
             ];
         }
     }
