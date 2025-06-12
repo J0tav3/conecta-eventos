@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// CONFIGURAÇÕES GLOBAIS
+// CONFIGURAÇÕES GLOBAIS - VERSÃO CORRIGIDA
 // Local: config/config.php
 // ==========================================
 
@@ -89,19 +89,7 @@ function isValidEmail($email) {
     return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
 }
 
-// Função para gerar token CSRF
-function generateCSRFToken() {
-    if (!isset($_SESSION['csrf_token'])) {
-        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-    }
-    return $_SESSION['csrf_token'];
-}
-
-// Função para verificar token CSRF
-function verifyCSRFToken($token) {
-    return isset($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $token);
-}
-
+// REMOVER AS FUNÇÕES CSRF DAQUI - ELAS ESTÃO EM session.php
 // Configurações de upload
 define('UPLOAD_MAX_SIZE', 5 * 1024 * 1024); // 5MB
 define('UPLOAD_ALLOWED_TYPES', ['jpg', 'jpeg', 'png', 'gif', 'webp']);

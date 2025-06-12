@@ -1,210 +1,114 @@
 <?php
 // ==========================================
-// FUNÇÕES DE SESSÃO - VERSÃO CORRIGIDA
-// Local: includes/session.php
+// CONFIGURAÇÕES GLOBAIS - VERSÃO CORRIGIDA
+// Local: config/config.php
 // ==========================================
 
-// Iniciar sessão se não estiver iniciada
-if (session_status() == PHP_SESSION_NONE) {
-    session_start();
+// URL do site (SEMPRE usar a URL pública)
+define('SITE_URL', 'https://conecta-eventos-production.up.railway.app');
+
+// Configurações de banco de dados
+// (Essas vêm das variáveis de ambiente do Railway)
+
+// Configurações de timezone
+date_default_timezone_set('America/Sao_Paulo');
+
+// Configurações de erro
+if ($_ENV['RAILWAY_ENVIRONMENT'] === 'production') {
+    error_reporting(E_ALL);
+    ini_set('display_errors', 0);
+    ini_set('log_errors', 1);
+} else {
+    error_reporting(E_ALL);
+    ini_set('display_errors', 1);
 }
 
-/**
- * Verificar se usuário está logado
- */
-function isLoggedIn() {
-    return isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;
-}
+// Configurações de sessão
+ini_set('session.cookie_httponly', 1);
+ini_set('session.cookie_secure', 1);
+ini_set('session.use_strict_mode', 1);
 
-/**
- * Verificar se é organizador
- */
-function isOrganizer() {
-    return isLoggedIn() && isset($_SESSION['user_type']) && $_SESSION['user_type'] === 'organizador';
-}
-
-/**
- * Verificar se é participante
- */
-function isParticipant() {
-    return isLoggedIn() && isset($_SESSION['user_type']) && $_SESSION['user_type'] === 'participante';
-}
-
-/**
- * Obter ID do usuário
- */
-function getUserId() {
-    return isLoggedIn() ? ($_SESSION['user_id'] ?? null) : null;
-}
-
-/**
- * Obter nome do usuário
- */
-function getUserName() {
-    return isLoggedIn() ? ($_SESSION['user_name'] ?? 'Usuário') : null;
-}
-
-/**
- * Obter email do usuário
- */
-function getUserEmail() {
-    return isLoggedIn() ? ($_SESSION['user_email'] ?? '') : null;
-}
-
-/**
- * Obter tipo do usuário
- */
-function getUserType() {
-    return isLoggedIn() ? ($_SESSION['user_type'] ?? 'participante') : null;
-}
-
-/**
- * Exigir login
- */
-function requireLogin() {
-    if (!isLoggedIn()) {
-        header('Location: ' . SITE_URL . '/views/auth/login.php');
-        exit();
-    }
-}
-
-/**
- * Exigir que seja organizador
- */
-function requireOrganizer() {
-    requireLogin();
-    if (!isOrganizer()) {
-        header('Location: ' . SITE_URL . '/index.php');
-        exit();
-    }
-}
-
-/**
- * Exigir que seja participante
- */
-function requireParticipant() {
-    requireLogin();
-    if (!isParticipant()) {
-        header('Location: ' . SITE_URL . '/index.php');
-        exit();
-    }
-}
-
-/**
- * Definir mensagem flash
- */
-function setFlashMessage($message, $type = 'info') {
-    $_SESSION['flash_message'] = $message;
-    $_SESSION['flash_type'] = $type;
-}
-
-/**
- * Obter e limpar mensagem flash
- */
-function getFlashMessage() {
-    if (isset($_SESSION['flash_message'])) {
-        $message = [
-            'message' => $_SESSION['flash_message'],
-            'type' => $_SESSION['flash_type'] ?? 'info'
-        ];
-        unset($_SESSION['flash_message'], $_SESSION['flash_type']);
-        return $message;
-    }
-    return null;
-}
-
-/**
- * Mostrar mensagem flash (para usar em views)
- */
-function showFlashMessage() {
-    $flash = getFlashMessage();
-    if ($flash) {
-        $iconMap = [
-            'success' => 'check-circle',
-            'danger' => 'exclamation-triangle',
-            'warning' => 'exclamation-triangle',
-            'info' => 'info-circle'
-        ];
-        $icon = $iconMap[$flash['type']] ?? 'info-circle';
+// Classe Database
+class Database {
+    private $connection;
+    
+    public function getConnection() {
+        if ($this->connection === null) {
+            try {
+                $database_url = getenv('DATABASE_URL');
+                
+                if (!$database_url) {
+                    throw new Exception('DATABASE_URL não configurada');
+                }
+                
+                // Parse da URL
+                $url_parts = parse_url($database_url);
+                
+                if (!$url_parts) {
+                    throw new Exception('DATABASE_URL mal formatada');
+                }
+                
+                $host = $url_parts['host'] ?? '';
+                $port = $url_parts['port'] ?? 3306;
+                $database = ltrim($url_parts['path'] ?? '', '/');
+                $username = $url_parts['user'] ?? '';
+                $password = $url_parts['pass'] ?? '';
+                
+                $dsn = "mysql:host={$host};port={$port};dbname={$database};charset=utf8mb4";
+                
+                $options = [
+                    PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
+                    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
+                    PDO::ATTR_EMULATE_PREPARES => false,
+                    PDO::MYSQL_ATTR_INIT_COMMAND => "SET NAMES utf8mb4",
+                    PDO::ATTR_TIMEOUT => 10
+                ];
+                
+                $this->connection = new PDO($dsn, $username, $password, $options);
+                
+            } catch (Exception $e) {
+                error_log("Erro de conexão com banco: " . $e->getMessage());
+                throw $e;
+            }
+        }
         
-        echo '<div class="alert alert-' . htmlspecialchars($flash['type']) . ' alert-dismissible fade show" role="alert">';
-        echo '<i class="fas fa-' . $icon . ' me-2"></i>';
-        echo htmlspecialchars($flash['message']);
-        echo '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
-        echo '</div>';
+        return $this->connection;
     }
 }
 
-/**
- * Criar sessão de usuário
- */
-function createUserSession($userData) {
-    $_SESSION['user_id'] = $userData['id_usuario'];
-    $_SESSION['user_name'] = $userData['nome'];
-    $_SESSION['user_email'] = $userData['email'];
-    $_SESSION['user_type'] = $userData['tipo'];
-    $_SESSION['logged_in'] = true;
-    $_SESSION['login_time'] = time();
-    
-    // Regenerar ID da sessão por segurança
-    session_regenerate_id(true);
+// Função para sanitizar dados
+function sanitizeInput($data) {
+    $data = trim($data);
+    $data = stripslashes($data);
+    $data = htmlspecialchars($data);
+    return $data;
 }
 
-/**
- * Destruir sessão
- */
-function destroyUserSession() {
-    // Limpar variáveis de sessão
-    $_SESSION = array();
-    
-    // Deletar cookie de sessão se existir
-    if (ini_get("session.use_cookies")) {
-        $params = session_get_cookie_params();
-        setcookie(session_name(), '', time() - 42000,
-            $params["path"], $params["domain"],
-            $params["secure"], $params["httponly"]
-        );
-    }
-    
-    // Destruir sessão
-    session_destroy();
+// Função para validar email
+function isValidEmail($email) {
+    return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
 }
 
-/**
- * Gerar token CSRF
- */
-function generateCSRFToken() {
-    if (!isset($_SESSION['csrf_token'])) {
-        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-    }
-    return $_SESSION['csrf_token'];
-}
+// REMOVER AS FUNÇÕES CSRF DAQUI - ELAS ESTÃO EM session.php
+// Configurações de upload
+define('UPLOAD_MAX_SIZE', 5 * 1024 * 1024); // 5MB
+define('UPLOAD_ALLOWED_TYPES', ['jpg', 'jpeg', 'png', 'gif', 'webp']);
+define('UPLOAD_PATH', __DIR__ . '/../uploads/');
 
-/**
- * Verificar token CSRF
- */
-function verifyCSRFToken($token) {
-    return isset($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $token);
-}
+// Configurações de email (se necessário)
+define('MAIL_HOST', 'smtp.gmail.com');
+define('MAIL_PORT', 587);
+define('MAIL_USERNAME', '');
+define('MAIL_PASSWORD', '');
+define('MAIL_FROM_EMAIL', 'noreply@conecta-eventos.com');
+define('MAIL_FROM_NAME', 'Conecta Eventos');
 
-/**
- * Limpar dados antigos da sessão
- */
-function cleanupSession() {
-    // Verificar se a sessão expirou (24 horas)
-    $maxLifetime = 24 * 60 * 60;
-    
-    if (isset($_SESSION['login_time']) && 
-        (time() - $_SESSION['login_time']) > $maxLifetime) {
-        destroyUserSession();
-        return false;
-    }
-    
-    return true;
-}
+// Configurações de paginação
+define('ITEMS_PER_PAGE', 12);
+define('MAX_PAGINATION_LINKS', 5);
 
-// Limpar sessão automaticamente se expirou
-if (isLoggedIn()) {
-    cleanupSession();
-}
+// Status padrão
+define('DEFAULT_USER_STATUS', 'ativo');
+define('DEFAULT_EVENT_STATUS', 'rascunho');
+
 ?>
