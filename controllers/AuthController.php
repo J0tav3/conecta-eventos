@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// AUTH CONTROLLER - VERSÃO CORRIGIDA COMPLETA
+// AUTH CONTROLLER - VERSÃO CORRIGIDA
 // Local: controllers/AuthController.php
 // ==========================================
 
@@ -8,16 +8,15 @@ require_once __DIR__ . '/../config/database.php';
 
 class AuthController {
     private $conn;
-    private $debug = true; // Ativar logs detalhados
+    private $debug = true;
     
     public function __construct() {
-        // Iniciar sessão se não estiver iniciada
-        if (session_status() == PHP_SESSION_NONE) {
-            session_start();
-        }
+        // NÃO iniciar sessão aqui - deixar para as páginas individuais
+        // if (session_status() == PHP_SESSION_NONE) {
+        //     session_start();
+        // }
         
         try {
-            // Conectar com banco usando a classe Database
             $database = Database::getInstance();
             $this->conn = $database->getConnection();
             
@@ -81,22 +80,29 @@ class AuthController {
                 
                 $this->log("Usuário encontrado: " . $user['nome']);
                 $this->log("Hash no banco: " . substr($user['senha'], 0, 20) . "...");
-                $this->log("Senha fornecida: " . $senha);
                 
-                // DEBUG: Testar diferentes métodos de verificação
-                $verify_result = password_verify($senha, $user['senha']);
-                $this->log("password_verify result: " . ($verify_result ? 'TRUE' : 'FALSE'));
+                // CORREÇÃO: Verificar se a senha é texto plano ou hash
+                $isPasswordHashed = strlen($user['senha']) === 60 && strpos($user['senha'], '$2y$') === 0;
                 
-                // Verificar se o hash parece válido
-                $hash_info = password_get_info($user['senha']);
-                $this->log("Hash info: " . json_encode($hash_info));
+                if ($isPasswordHashed) {
+                    // Senha está hasheada - usar password_verify
+                    $passwordMatch = password_verify($senha, $user['senha']);
+                    $this->log("password_verify result: " . ($passwordMatch ? 'TRUE' : 'FALSE'));
+                } else {
+                    // Senha em texto plano - comparar diretamente e depois hashear
+                    $passwordMatch = ($senha === $user['senha']);
+                    $this->log("Direct match (plain text): " . ($passwordMatch ? 'TRUE' : 'FALSE'));
+                    
+                    if ($passwordMatch) {
+                        // Converter para hash
+                        $new_hash = password_hash($senha, PASSWORD_DEFAULT);
+                        $update_stmt = $this->conn->prepare("UPDATE usuarios SET senha = ? WHERE id_usuario = ?");
+                        $update_stmt->execute([$new_hash, $user['id_usuario']]);
+                        $this->log("Senha convertida para hash");
+                    }
+                }
                 
-                // Tentar verificação direta também (para debug)
-                $direct_match = ($senha === $user['senha']);
-                $this->log("Direct match (plain text): " . ($direct_match ? 'TRUE' : 'FALSE'));
-                
-                // Verificar senha
-                if ($verify_result) {
+                if ($passwordMatch) {
                     $this->log("Senha correta - criando sessão");
                     
                     $this->createUserSession($user);
@@ -113,33 +119,11 @@ class AuthController {
                     ];
                 } else {
                     $this->log("Senha incorreta");
-                    
-                    // Se a senha não funciona com hash, mas o usuário existe,
-                    // vamos recriar o hash (pode ser um problema de migração)
-                    if ($direct_match) {
-                        $this->log("Detectada senha em texto plano - atualizando hash");
-                        $new_hash = password_hash($senha, PASSWORD_DEFAULT);
-                        
-                        $update_stmt = $this->conn->prepare("UPDATE usuarios SET senha = ? WHERE id_usuario = ?");
-                        $update_stmt->execute([$new_hash, $user['id_usuario']]);
-                        
-                        $this->log("Hash atualizado - fazendo login");
-                        
-                        $this->createUserSession($user);
-                        $this->updateLastAccess($user['id_usuario']);
-                        
-                        return [
-                            'success' => true,
-                            'message' => 'Login realizado com sucesso!',
-                            'redirect' => $this->getRedirectUrl($user['tipo'])
-                        ];
-                    }
-                    
-                    return ['success' => false, 'message' => 'Senha incorreta.'];
+                    return ['success' => false, 'message' => 'E-mail ou senha incorretos.'];
                 }
             } else {
                 $this->log("Usuário não encontrado ou inativo");
-                return ['success' => false, 'message' => 'E-mail não encontrado ou usuário inativo.'];
+                return ['success' => false, 'message' => 'E-mail ou senha incorretos.'];
             }
             
         } catch (Exception $e) {
@@ -341,6 +325,11 @@ class AuthController {
      * Criar sessão do usuário
      */
     private function createUserSession($user) {
+        // Garantir que a sessão está iniciada
+        if (session_status() == PHP_SESSION_NONE) {
+            session_start();
+        }
+        
         $_SESSION['user_id'] = $user['id_usuario'];
         $_SESSION['user_name'] = $user['nome'];
         $_SESSION['user_email'] = $user['email'];
@@ -373,6 +362,11 @@ class AuthController {
      * Fazer logout
      */
     public function logout() {
+        // Garantir que a sessão está iniciada
+        if (session_status() == PHP_SESSION_NONE) {
+            session_start();
+        }
+        
         // Destruir todas as variáveis de sessão
         $_SESSION = array();
         
@@ -399,6 +393,9 @@ class AuthController {
      * Verificar se usuário está logado
      */
     public function isLoggedIn() {
+        if (session_status() == PHP_SESSION_NONE) {
+            session_start();
+        }
         return isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;
     }
     
@@ -406,6 +403,10 @@ class AuthController {
      * Obter dados do usuário logado
      */
     public function getCurrentUser() {
+        if (session_status() == PHP_SESSION_NONE) {
+            session_start();
+        }
+        
         if (!$this->isLoggedIn()) {
             return null;
         }
@@ -423,6 +424,9 @@ class AuthController {
      * Verificar se usuário é organizador
      */
     public function isOrganizer() {
+        if (session_status() == PHP_SESSION_NONE) {
+            session_start();
+        }
         return $this->isLoggedIn() && $_SESSION['user_type'] === 'organizador';
     }
     
@@ -430,6 +434,9 @@ class AuthController {
      * Verificar se usuário é participante
      */
     public function isParticipant() {
+        if (session_status() == PHP_SESSION_NONE) {
+            session_start();
+        }
         return $this->isLoggedIn() && $_SESSION['user_type'] === 'participante';
     }
     
@@ -452,6 +459,10 @@ class AuthController {
      * Validar sessão (prevenção contra session hijacking)
      */
     public function validateSession() {
+        if (session_status() == PHP_SESSION_NONE) {
+            session_start();
+        }
+        
         if (!$this->isLoggedIn()) {
             return false;
         }
@@ -492,53 +503,6 @@ class AuthController {
             return [
                 'success' => false,
                 'message' => 'Erro no teste: ' . $e->getMessage()
-            ];
-        }
-    }
-    
-    /**
-     * Corrigir senhas em texto plano (função utilitária)
-     */
-    public function fixPlainTextPasswords() {
-        if (!$this->conn) {
-            return ['success' => false, 'message' => 'Sem conexão'];
-        }
-        
-        try {
-            // Buscar usuários com senhas que não parecem hash
-            $stmt = $this->conn->prepare("
-                SELECT id_usuario, email, senha 
-                FROM usuarios 
-                WHERE LENGTH(senha) < 50 OR senha NOT LIKE '$%'
-            ");
-            $stmt->execute();
-            $users = $stmt->fetchAll();
-            
-            $fixed = 0;
-            foreach ($users as $user) {
-                $new_hash = password_hash($user['senha'], PASSWORD_DEFAULT);
-                
-                $update_stmt = $this->conn->prepare("
-                    UPDATE usuarios 
-                    SET senha = ? 
-                    WHERE id_usuario = ?
-                ");
-                $update_stmt->execute([$new_hash, $user['id_usuario']]);
-                $fixed++;
-                
-                $this->log("Senha corrigida para usuário: " . $user['email']);
-            }
-            
-            return [
-                'success' => true,
-                'message' => "Corrigidas {$fixed} senhas",
-                'fixed_count' => $fixed
-            ];
-            
-        } catch (Exception $e) {
-            return [
-                'success' => false,
-                'message' => 'Erro: ' . $e->getMessage()
             ];
         }
     }

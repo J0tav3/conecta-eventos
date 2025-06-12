@@ -1,14 +1,24 @@
 <?php
 // ==========================================
-// PÁGINA DE LOGIN - VERSÃO SIMPLIFICADA
+// PÁGINA DE LOGIN - VERSÃO CORRIGIDA
 // Local: views/auth/login.php
 // ==========================================
 
-// Não incluir outros arquivos que podem dar erro
-// require_once '../../config/config.php';
-// require_once '../../includes/session.php';
+// Iniciar sessão apenas se não estiver já iniciada
+if (session_status() == PHP_SESSION_NONE) {
+    session_start();
+}
 
-session_start();
+// Verificar se já está logado
+if (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
+    $userType = $_SESSION['user_type'] ?? 'participante';
+    if ($userType === 'organizador') {
+        header("Location: ../dashboard/organizer.php");
+    } else {
+        header("Location: ../dashboard/participant.php");
+    }
+    exit;
+}
 
 $title = "Login - Conecta Eventos";
 $error_message = '';
@@ -22,7 +32,7 @@ if (isset($_GET['registered']) && $_GET['registered'] === '1') {
     $success_message = "Conta criada com sucesso! Faça login para continuar.";
 }
 
-// Processar formulário (versão simplificada)
+// Processar formulário
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $email = trim($_POST['email'] ?? '');
     $senha = $_POST['senha'] ?? '';
@@ -30,29 +40,54 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if (empty($email) || empty($senha)) {
         $error_message = "Por favor, preencha todos os campos.";
     } else {
-        // Login temporário com contas demo
-        $demo_accounts = [
-            'admin@conectaeventos.com' => ['senha' => 'admin123', 'tipo' => 'organizador', 'nome' => 'Administrador'],
-            'user@conectaeventos.com' => ['senha' => 'user123', 'tipo' => 'participante', 'nome' => 'Usuário Demo']
-        ];
-        
-        if (isset($demo_accounts[$email]) && $demo_accounts[$email]['senha'] === $senha) {
-            // Login bem-sucedido
-            $_SESSION['user_id'] = 1;
-            $_SESSION['user_email'] = $email;
-            $_SESSION['user_name'] = $demo_accounts[$email]['nome'];
-            $_SESSION['user_type'] = $demo_accounts[$email]['tipo'];
-            $_SESSION['logged_in'] = true;
-            
-            // Redirecionar baseado no tipo
-            if ($demo_accounts[$email]['tipo'] === 'organizador') {
-                header("Location: ../dashboard/organizer.php");
+        try {
+            // Tentar carregar o AuthController
+            if (file_exists('../../controllers/AuthController.php')) {
+                require_once '../../controllers/AuthController.php';
+                
+                $authController = new AuthController();
+                $result = $authController->login($_POST);
+                
+                if ($result['success']) {
+                    $success_message = $result['message'];
+                    
+                    // Redirecionar se tiver URL
+                    if (isset($result['redirect'])) {
+                        header('Location: ' . $result['redirect']);
+                        exit;
+                    }
+                } else {
+                    $error_message = $result['message'];
+                }
             } else {
-                header("Location: ../dashboard/participant.php");
+                // Fallback - sistema simples
+                $demo_accounts = [
+                    'admin@conectaeventos.com' => ['senha' => 'admin123', 'tipo' => 'organizador', 'nome' => 'Administrador'],
+                    'user@conectaeventos.com' => ['senha' => 'user123', 'tipo' => 'participante', 'nome' => 'Usuário Demo']
+                ];
+                
+                if (isset($demo_accounts[$email]) && $demo_accounts[$email]['senha'] === $senha) {
+                    // Login bem-sucedido
+                    $_SESSION['user_id'] = 1;
+                    $_SESSION['user_email'] = $email;
+                    $_SESSION['user_name'] = $demo_accounts[$email]['nome'];
+                    $_SESSION['user_type'] = $demo_accounts[$email]['tipo'];
+                    $_SESSION['logged_in'] = true;
+                    
+                    // Redirecionar baseado no tipo
+                    if ($demo_accounts[$email]['tipo'] === 'organizador') {
+                        header("Location: ../dashboard/organizer.php");
+                    } else {
+                        header("Location: ../dashboard/participant.php");
+                    }
+                    exit;
+                } else {
+                    $error_message = "Email ou senha incorretos.";
+                }
             }
-            exit;
-        } else {
-            $error_message = "Email ou senha incorretos.";
+        } catch (Exception $e) {
+            error_log("Erro no login: " . $e->getMessage());
+            $error_message = "Erro interno do sistema. Tente novamente.";
         }
     }
 }
