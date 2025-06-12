@@ -1,7 +1,7 @@
 <?php
 // ========================================
 // CONECTA EVENTOS - PÁGINA INICIAL
-// Versão robusta que funciona mesmo com problemas de DATABASE_URL
+// Versão REAL com banco de dados Railway
 // ========================================
 
 error_reporting(E_ALL);
@@ -19,172 +19,141 @@ $userName = '';
 $database_connected = false;
 $connection_error = '';
 
-// Dados de exemplo para fallback
-$eventos_exemplo = [
-    [
-        'id_evento' => 1,
-        'titulo' => 'Workshop de Desenvolvimento Web',
-        'descricao' => 'Aprenda as últimas tecnologias em desenvolvimento web com especialistas da área.',
-        'data_inicio' => date('Y-m-d', strtotime('+7 days')),
-        'horario_inicio' => '14:00:00',
-        'local_cidade' => 'São Paulo',
-        'evento_gratuito' => true,
-        'preco' => 0,
-        'imagem_capa' => '',
-        'categoria_id' => 1,
-        'nome_categoria' => 'Tecnologia'
-    ],
-    [
-        'id_evento' => 2,
-        'titulo' => 'Palestra: Empreendedorismo Digital',
-        'descricao' => 'Como criar e escalar um negócio digital no mercado atual.',
-        'data_inicio' => date('Y-m-d', strtotime('+10 days')),
-        'horario_inicio' => '19:00:00',
-        'local_cidade' => 'Rio de Janeiro',
-        'evento_gratuito' => false,
-        'preco' => 50.00,
-        'imagem_capa' => '',
-        'categoria_id' => 2,
-        'nome_categoria' => 'Negócios'
-    ],
-    [
-        'id_evento' => 3,
-        'titulo' => 'Curso: Marketing Digital Avançado',
-        'descricao' => 'Estratégias avançadas de marketing digital e growth hacking.',
-        'data_inicio' => date('Y-m-d', strtotime('+14 days')),
-        'horario_inicio' => '09:00:00',
-        'local_cidade' => 'Belo Horizonte',
-        'evento_gratuito' => true,
-        'preco' => 0,
-        'imagem_capa' => '',
-        'categoria_id' => 3,
-        'nome_categoria' => 'Marketing'
-    ],
-    [
-        'id_evento' => 4,
-        'titulo' => 'Meetup: Inteligência Artificial',
-        'descricao' => 'Discussões sobre o futuro da IA e suas aplicações práticas.',
-        'data_inicio' => date('Y-m-d', strtotime('+21 days')),
-        'horario_inicio' => '18:30:00',
-        'local_cidade' => 'Porto Alegre',
-        'evento_gratuito' => true,
-        'preco' => 0,
-        'imagem_capa' => '',
-        'categoria_id' => 1,
-        'nome_categoria' => 'Tecnologia'
-    ],
-    [
-        'id_evento' => 5,
-        'titulo' => 'Workshop: Design UX/UI',
-        'descricao' => 'Princípios fundamentais de design de experiência do usuário.',
-        'data_inicio' => date('Y-m-d', strtotime('+17 days')),
-        'horario_inicio' => '13:00:00',
-        'local_cidade' => 'Brasília',
-        'evento_gratuito' => false,
-        'preco' => 75.00,
-        'imagem_capa' => '',
-        'categoria_id' => 4,
-        'nome_categoria' => 'Design'
-    ],
-    [
-        'id_evento' => 6,
-        'titulo' => 'Conferência: Inovação e Sustentabilidade',
-        'descricao' => 'Como a tecnologia pode ajudar na criação de um futuro sustentável.',
-        'data_inicio' => date('Y-m-d', strtotime('+28 days')),
-        'horario_inicio' => '08:00:00',
-        'local_cidade' => 'Curitiba',
-        'evento_gratuito' => false,
-        'preco' => 120.00,
-        'imagem_capa' => '',
-        'categoria_id' => 5,
-        'nome_categoria' => 'Sustentabilidade'
-    ]
-];
+// Tentar carregar dependências
+$dependencies_loaded = false;
+try {
+    if (file_exists('config/config.php')) {
+        require_once 'config/config.php';
+    }
+    if (file_exists('includes/session.php')) {
+        require_once 'includes/session.php';
+    }
+    if (file_exists('controllers/EventController.php')) {
+        require_once 'controllers/EventController.php';
+    }
+    $dependencies_loaded = true;
+} catch (Exception $e) {
+    error_log("Erro ao carregar dependências: " . $e->getMessage());
+}
 
-$categorias_exemplo = [
-    ['id_categoria' => 1, 'nome' => 'Tecnologia'],
-    ['id_categoria' => 2, 'nome' => 'Negócios'],
-    ['id_categoria' => 3, 'nome' => 'Marketing'],
-    ['id_categoria' => 4, 'nome' => 'Design'],
-    ['id_categoria' => 5, 'nome' => 'Sustentabilidade'],
-    ['id_categoria' => 6, 'nome' => 'Educação'],
-    ['id_categoria' => 7, 'nome' => 'Entretenimento']
-];
-
-$cidades_exemplo = [
-    ['local_cidade' => 'São Paulo'],
-    ['local_cidade' => 'Rio de Janeiro'],
-    ['local_cidade' => 'Belo Horizonte'],
-    ['local_cidade' => 'Porto Alegre'],
-    ['local_cidade' => 'Brasília'],
-    ['local_cidade' => 'Curitiba'],
-    ['local_cidade' => 'Salvador'],
-    ['local_cidade' => 'Fortaleza']
-];
-
-// Tentar conexão com banco
-$database_url = getenv('DATABASE_URL');
-if ($database_url) {
+// Verificar conexão com banco e carregar dados
+if ($dependencies_loaded) {
     try {
-        // Verificar se os arquivos necessários existem
-        if (file_exists('config/config.php') && 
-            file_exists('includes/session.php') && 
-            file_exists('controllers/EventController.php')) {
+        // Verificar se temos acesso ao banco
+        $database_url = getenv('DATABASE_URL');
+        if ($database_url) {
+            error_log("DATABASE_URL encontrada: " . substr($database_url, 0, 20) . "...");
             
-            require_once 'config/config.php';
-            require_once 'includes/session.php';
-            require_once 'controllers/EventController.php';
-            
-            // Tentar criar o controller
+            // Tentar criar controller de eventos
             $eventController = new EventController();
             
-            // Tentar buscar dados
-            $eventos_db = $eventController->getPublicEvents(['limite' => 50]);
-            $categorias_db = $eventController->getCategories();
+            // Testar conexão básica
+            $test_query = "SELECT 1 as test";
+            $db = Database::getInstance();
+            $conn = $db->getConnection();
             
-            if (!empty($eventos_db)) {
-                $eventos = $eventos_db;
-                $database_connected = true;
-            }
-            
-            if (!empty($categorias_db)) {
-                $categorias = $categorias_db;
-            }
-            
-            // Verificar usuário logado
-            $isUserLoggedIn = function_exists('isLoggedIn') ? isLoggedIn() : false;
-            $userName = function_exists('getUserName') ? getUserName() : '';
-            
-            // Buscar cidades do banco
-            if (class_exists('Database')) {
-                $database = new Database();
-                $conn = $database->getConnection();
-                if ($conn) {
-                    $stmt = $conn->prepare("SELECT DISTINCT local_cidade FROM eventos WHERE status = 'publicado' AND local_cidade IS NOT NULL ORDER BY local_cidade");
-                    $stmt->execute();
-                    $cidades_db = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                    if (!empty($cidades_db)) {
-                        $cidades = $cidades_db;
+            if ($conn) {
+                $stmt = $conn->prepare($test_query);
+                if ($stmt && $stmt->execute()) {
+                    $database_connected = true;
+                    error_log("Conexão com banco confirmada!");
+                    
+                    // Carregar eventos reais
+                    $eventos = $eventController->getPublicEvents(['limite' => 50]);
+                    error_log("Eventos carregados: " . count($eventos));
+                    
+                    // Carregar categorias reais
+                    $categorias = $eventController->getCategories();
+                    error_log("Categorias carregadas: " . count($categorias));
+                    
+                    // Verificar sessão do usuário
+                    if (function_exists('isLoggedIn') && function_exists('getUserName')) {
+                        $isUserLoggedIn = isLoggedIn();
+                        $userName = getUserName() ?: '';
                     }
+                    
+                    // Buscar cidades dos eventos
+                    try {
+                        $cities_query = "SELECT DISTINCT local_cidade FROM eventos WHERE status = 'publicado' AND local_cidade IS NOT NULL AND local_cidade != '' ORDER BY local_cidade";
+                        $stmt = $conn->prepare($cities_query);
+                        $stmt->execute();
+                        $cidades_db = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                        $cidades = $cidades_db ?: [];
+                        error_log("Cidades carregadas: " . count($cidades));
+                    } catch (Exception $e) {
+                        error_log("Erro ao carregar cidades: " . $e->getMessage());
+                    }
+                } else {
+                    error_log("Falha no teste de query");
                 }
+            } else {
+                error_log("Conexão PDO é null");
             }
-            
+        } else {
+            error_log("DATABASE_URL não encontrada");
+            $connection_error = "DATABASE_URL não configurada";
         }
     } catch (Exception $e) {
-        error_log("Erro ao conectar com banco: " . $e->getMessage());
+        error_log("Erro na conexão com banco: " . $e->getMessage());
         $connection_error = $e->getMessage();
     }
 }
 
-// Se não conseguiu conectar ou não há dados, usar exemplos
+// Dados de fallback se não conseguir conectar
 if (empty($eventos)) {
-    $eventos = $eventos_exemplo;
+    error_log("Usando eventos de fallback");
+    $eventos = [
+        [
+            'id_evento' => 1,
+            'titulo' => 'Workshop de Desenvolvimento Web',
+            'descricao' => 'Aprenda as últimas tecnologias em desenvolvimento web com especialistas da área.',
+            'data_inicio' => date('Y-m-d', strtotime('+7 days')),
+            'horario_inicio' => '14:00:00',
+            'local_cidade' => 'São Paulo',
+            'evento_gratuito' => 1,
+            'preco' => 0,
+            'imagem_capa' => '',
+            'id_categoria' => 1,
+            'nome_categoria' => 'Tecnologia',
+            'total_inscritos' => 45,
+            'nome_organizador' => 'Tech Academy'
+        ],
+        [
+            'id_evento' => 2,
+            'titulo' => 'Palestra: Empreendedorismo Digital',
+            'descricao' => 'Como criar e escalar um negócio digital no mercado atual.',
+            'data_inicio' => date('Y-m-d', strtotime('+10 days')),
+            'horario_inicio' => '19:00:00',
+            'local_cidade' => 'Rio de Janeiro',
+            'evento_gratuito' => 0,
+            'preco' => 50.00,
+            'imagem_capa' => '',
+            'id_categoria' => 2,
+            'nome_categoria' => 'Negócios',
+            'total_inscritos' => 32,
+            'nome_organizador' => 'Business Institute'
+        ]
+    ];
 }
+
 if (empty($categorias)) {
-    $categorias = $categorias_exemplo;
+    $categorias = [
+        ['id_categoria' => 1, 'nome' => 'Tecnologia'],
+        ['id_categoria' => 2, 'nome' => 'Negócios'],
+        ['id_categoria' => 3, 'nome' => 'Marketing'],
+        ['id_categoria' => 4, 'nome' => 'Design'],
+        ['id_categoria' => 5, 'nome' => 'Educação']
+    ];
 }
+
 if (empty($cidades)) {
-    $cidades = $cidades_exemplo;
+    $cidades = [
+        ['local_cidade' => 'São Paulo'],
+        ['local_cidade' => 'Rio de Janeiro'],
+        ['local_cidade' => 'Belo Horizonte'],
+        ['local_cidade' => 'Porto Alegre'],
+        ['local_cidade' => 'Brasília']
+    ];
 }
 
 // Processar filtros de busca
@@ -192,7 +161,7 @@ $searchTerm = isset($_GET['busca']) ? trim(htmlspecialchars($_GET['busca'])) : '
 $categoryFilter = isset($_GET['categoria']) ? (int)$_GET['categoria'] : '';
 $cityFilter = isset($_GET['cidade']) ? trim(htmlspecialchars($_GET['cidade'])) : '';
 
-// Aplicar filtros
+// Aplicar filtros se houver dados
 $eventos_filtrados = $eventos;
 
 if (!empty($searchTerm)) {
@@ -204,7 +173,7 @@ if (!empty($searchTerm)) {
 
 if (!empty($categoryFilter)) {
     $eventos_filtrados = array_filter($eventos_filtrados, function($evento) use ($categoryFilter) {
-        return $evento['categoria_id'] == $categoryFilter;
+        return (int)$evento['id_categoria'] === $categoryFilter;
     });
 }
 
@@ -376,6 +345,16 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
             margin-bottom: 3rem;
             box-shadow: 0 4px 20px rgba(0, 0, 0, 0.08);
         }
+
+        .navbar-brand:hover {
+            transform: scale(1.05);
+            transition: transform 0.2s ease;
+        }
+
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        }
     </style>
 </head>
 <body>
@@ -393,7 +372,7 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
             
             <div class="collapse navbar-collapse" id="navbarNav">
                 <div class="navbar-nav ms-auto">
-                    <?php if ($database_connected && $isUserLoggedIn): ?>
+                    <?php if ($isUserLoggedIn): ?>
                         <span class="navbar-text me-3">
                             <i class="fas fa-user-circle me-1"></i>
                             Olá, <?php echo htmlspecialchars($userName); ?>!
@@ -421,8 +400,8 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
                 <div class="d-flex align-items-center">
                     <i class="fas fa-check-circle fa-lg me-3"></i>
                     <div class="flex-grow-1">
-                        <strong>Sistema Online:</strong> Conectado ao banco de dados. Todos os recursos disponíveis.
-                        <a href="test.php" class="btn btn-sm btn-outline-light ms-2">Ver Status</a>
+                        <strong>Sistema Online:</strong> Conectado ao banco de dados Railway. Todos os recursos disponíveis.
+                        <small class="d-block">Eventos: <?php echo count($eventos); ?> | Categorias: <?php echo count($categorias); ?></small>
                     </div>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
                 </div>
@@ -432,11 +411,14 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
         <div class="alert demo-alert alert-dismissible fade show m-0" role="alert">
             <div class="container">
                 <div class="d-flex align-items-center">
-                    <i class="fas fa-info-circle fa-lg me-3"></i>
+                    <i class="fas fa-exclamation-triangle fa-lg me-3"></i>
                     <div class="flex-grow-1">
-                        <strong>Modo Demonstração:</strong> 
-                        Mostrando dados de exemplo. Configure DATABASE_URL para conectar ao banco real.
-                        <a href="test.php" class="btn btn-sm btn-outline-dark ms-2">Ver Diagnóstico</a>
+                        <strong>Modo Limitado:</strong> 
+                        <?php if ($connection_error): ?>
+                            Erro de conexão: <?php echo htmlspecialchars($connection_error); ?>
+                        <?php else: ?>
+                            Usando dados de exemplo. Verifique a configuração do banco.
+                        <?php endif; ?>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                 </div>
@@ -587,7 +569,11 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
                         <?php if (!empty($searchTerm) || !empty($categoryFilter) || !empty($cityFilter)): ?>
                             Tente ajustar os filtros ou buscar por outros termos.
                         <?php else: ?>
-                            Ainda não há eventos cadastrados. Volte em breve!
+                            <?php if ($database_connected): ?>
+                                Ainda não há eventos cadastrados. Volte em breve!
+                            <?php else: ?>
+                                Problemas de conexão com o banco de dados.
+                            <?php endif; ?>
                         <?php endif; ?>
                     </p>
                     <?php if (!empty($searchTerm) || !empty($categoryFilter) || !empty($cityFilter)): ?>
@@ -602,7 +588,11 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
                         <div class="col-lg-4 col-md-6 mb-4">
                             <div class="card event-card">
                                 <div class="price-badge <?php echo $evento['evento_gratuito'] ? '' : 'paid'; ?>">
-                                    <?php echo $evento['evento_gratuito'] ? 'Gratuito' : 'R$ ' . number_format($evento['preco'], 2, ',', '.'); ?>
+                                    <?php if ($evento['evento_gratuito']): ?>
+                                        Gratuito
+                                    <?php else: ?>
+                                        R$ <?php echo number_format($evento['preco'], 2, ',', '.'); ?>
+                                    <?php endif; ?>
                                 </div>
                                 
                                 <?php if (!empty($evento['imagem_capa']) && file_exists("uploads/eventos/" . $evento['imagem_capa'])): ?>
@@ -640,6 +630,9 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
                                         <small class="text-muted">
                                             <i class="fas fa-map-marker-alt me-1"></i>
                                             <?php echo htmlspecialchars($evento['local_cidade']); ?>
+                                            
+                                            <i class="fas fa-users ms-3 me-1"></i>
+                                            <?php echo (int)($evento['total_inscritos'] ?? 0); ?> inscritos
                                         </small>
                                     </div>
                                     
@@ -681,15 +674,201 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
                     </div>
                     <div class="col-6 col-md-3">
                         <div class="stat-item">
-                            <div class="stat-number">
-                                <?php 
-                                $gratuitos = array_filter($eventos, function($e) { return $e['evento_gratuito']; });
-                                echo count($gratuitos); 
-                                ?>
-                            </div>
-                            <div class="stat-label">Eventos Gratuitos</div>
+                            <div class="stat-number"><?php echo array_sum(array_column($eventos, 'total_inscritos')); ?></div>
+                            <div class="stat-label">Total Participantes</div>
                         </div>
                     </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Seção de CTA -->
+        <?php if (!$isUserLoggedIn): ?>
+        <section class="mb-5">
+            <div class="row">
+                <div class="col-lg-6 mb-4">
+                    <div class="card h-100 border-0 shadow">
+                        <div class="card-body text-center p-4">
+                            <div class="mb-3">
+                                <i class="fas fa-users fa-3x text-primary"></i>
+                            </div>
+                            <h4>Para Participantes</h4>
+                            <p class="text-muted">Descubra eventos incríveis, conecte-se com pessoas interessantes e aprenda coisas novas.</p>
+                            <ul class="list-unstyled text-start">
+                                <li><i class="fas fa-check text-success me-2"></i>Inscrição em eventos gratuitos e pagos</li>
+                                <li><i class="fas fa-check text-success me-2"></i>Networking com outros participantes</li>
+                                <li><i class="fas fa-check text-success me-2"></i>Certificados de participação</li>
+                                <li><i class="fas fa-check text-success me-2"></i>Sistema de favoritos</li>
+                            </ul>
+                            <a href="views/auth/register.php?tipo=participante" class="btn btn-primary">
+                                <i class="fas fa-user-plus me-2"></i>Cadastrar como Participante
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="col-lg-6 mb-4">
+                    <div class="card h-100 border-0 shadow">
+                        <div class="card-body text-center p-4">
+                            <div class="mb-3">
+                                <i class="fas fa-calendar-plus fa-3x text-success"></i>
+                            </div>
+                            <h4>Para Organizadores</h4>
+                            <p class="text-muted">Crie e gerencie seus eventos, alcance seu público-alvo e construa uma comunidade.</p>
+                            <ul class="list-unstyled text-start">
+                                <li><i class="fas fa-check text-success me-2"></i>Criação ilimitada de eventos</li>
+                                <li><i class="fas fa-check text-success me-2"></i>Gestão completa de participantes</li>
+                                <li><i class="fas fa-check text-success me-2"></i>Relatórios e analytics</li>
+                                <li><i class="fas fa-check text-success me-2"></i>Sistema de pagamentos</li>
+                            </ul>
+                            <a href="views/auth/register.php?tipo=organizador" class="btn btn-success">
+                                <i class="fas fa-plus me-2"></i>Cadastrar como Organizador
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+        <?php endif; ?>
+
+        <!-- Categorias em Destaque -->
+        <section class="mb-5">
+            <h2 class="text-center mb-5">
+                <i class="fas fa-tags me-2"></i>Explore por Categoria
+            </h2>
+            <div class="row">
+                <?php 
+                $categoria_icons = [
+                    'Tecnologia' => 'fas fa-laptop-code',
+                    'Negócios' => 'fas fa-briefcase',
+                    'Marketing' => 'fas fa-bullhorn',
+                    'Design' => 'fas fa-palette',
+                    'Educação' => 'fas fa-graduation-cap',
+                    'Saúde' => 'fas fa-heartbeat',
+                    'Arte' => 'fas fa-paint-brush',
+                    'Esporte' => 'fas fa-running',
+                    'Música' => 'fas fa-music',
+                    'Culinária' => 'fas fa-utensils'
+                ];
+                
+                foreach ($categorias as $index => $categoria): 
+                    if ($index >= 6) break; // Mostrar apenas 6 categorias
+                    $icon = $categoria_icons[$categoria['nome']] ?? 'fas fa-calendar';
+                ?>
+                    <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
+                        <a href="?categoria=<?php echo $categoria['id_categoria']; ?>" 
+                           class="text-decoration-none">
+                            <div class="card text-center h-100 border-0 shadow-sm categoria-card">
+                                <div class="card-body py-4">
+                                    <i class="<?php echo $icon; ?> fa-2x text-primary mb-3"></i>
+                                    <h6 class="card-title"><?php echo htmlspecialchars($categoria['nome']); ?></h6>
+                                    <small class="text-muted">
+                                        <?php 
+                                        $eventos_categoria = array_filter($eventos, function($e) use ($categoria) {
+                                            return $e['id_categoria'] == $categoria['id_categoria'];
+                                        });
+                                        echo count($eventos_categoria);
+                                        ?> eventos
+                                    </small>
+                                </div>
+                            </div>
+                        </a>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+        </section>
+
+        <!-- Próximos Eventos em Destaque -->
+        <?php 
+        $eventos_destaque = array_slice($eventos, 0, 3);
+        if (!empty($eventos_destaque)): 
+        ?>
+        <section class="mb-5">
+            <h2 class="text-center mb-5">
+                <i class="fas fa-star me-2"></i>Próximos Eventos em Destaque
+            </h2>
+            <div class="row">
+                <?php foreach ($eventos_destaque as $evento): ?>
+                    <div class="col-lg-4 mb-4">
+                        <div class="card event-card-destaque h-100 border-0">
+                            <div class="card-body p-4">
+                                <div class="d-flex justify-content-between align-items-start mb-3">
+                                    <span class="badge bg-primary"><?php echo htmlspecialchars($evento['nome_categoria'] ?? 'Evento'); ?></span>
+                                    <span class="badge <?php echo $evento['evento_gratuito'] ? 'bg-success' : 'bg-warning'; ?>">
+                                        <?php echo $evento['evento_gratuito'] ? 'Gratuito' : 'R$ ' . number_format($evento['preco'], 2, ',', '.'); ?>
+                                    </span>
+                                </div>
+                                
+                                <h5 class="card-title"><?php echo htmlspecialchars($evento['titulo']); ?></h5>
+                                <p class="card-text text-muted">
+                                    <?php echo substr(htmlspecialchars($evento['descricao']), 0, 100); ?>...
+                                </p>
+                                
+                                <div class="mb-3">
+                                    <div class="d-flex align-items-center mb-2">
+                                        <i class="fas fa-calendar text-primary me-2"></i>
+                                        <small><?php echo date('d/m/Y', strtotime($evento['data_inicio'])); ?></small>
+                                        <i class="fas fa-clock text-primary ms-3 me-2"></i>
+                                        <small><?php echo date('H:i', strtotime($evento['horario_inicio'])); ?></small>
+                                    </div>
+                                    <div class="d-flex align-items-center">
+                                        <i class="fas fa-map-marker-alt text-primary me-2"></i>
+                                        <small><?php echo htmlspecialchars($evento['local_cidade']); ?></small>
+                                        <i class="fas fa-users text-primary ms-3 me-2"></i>
+                                        <small><?php echo $evento['total_inscritos']; ?> inscritos</small>
+                                    </div>
+                                </div>
+                                
+                                <div class="d-grid">
+                                    <a href="views/events/view.php?id=<?php echo $evento['id_evento']; ?>" 
+                                       class="btn btn-outline-primary">
+                                        Ver Detalhes
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            </div>
+            
+            <div class="text-center">
+                <a href="?todos=1" class="btn btn-primary btn-lg">
+                    <i class="fas fa-calendar-alt me-2"></i>Ver Todos os Eventos
+                </a>
+            </div>
+        </section>
+        <?php endif; ?>
+
+        <!-- Newsletter -->
+        <section class="mb-5">
+            <div class="card border-0 shadow" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
+                <div class="card-body text-center text-white py-5">
+                    <h3 class="mb-3">
+                        <i class="fas fa-envelope me-2"></i>Fique por dentro dos melhores eventos
+                    </h3>
+                    <p class="lead mb-4">
+                        Receba notificações sobre novos eventos na sua cidade e área de interesse.
+                    </p>
+                    
+                    <?php if (!$isUserLoggedIn): ?>
+                        <div class="row justify-content-center">
+                            <div class="col-md-6">
+                                <form class="d-flex gap-2">
+                                    <input type="email" class="form-control" placeholder="Seu melhor e-mail" required>
+                                    <button type="submit" class="btn btn-light">
+                                        <i class="fas fa-bell me-1"></i>Notificar
+                                    </button>
+                                </form>
+                                <small class="text-white-50 mt-2 d-block">
+                                    Sem spam. Cancele quando quiser.
+                                </small>
+                            </div>
+                        </div>
+                    <?php else: ?>
+                        <a href="views/dashboard/settings.php" class="btn btn-light btn-lg">
+                            <i class="fas fa-cog me-2"></i>Configurar Notificações
+                        </a>
+                    <?php endif; ?>
                 </div>
             </div>
         </section>
@@ -699,41 +878,84 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
     <footer class="bg-dark text-white py-5 mt-5">
         <div class="container">
             <div class="row">
-                <div class="col-md-6">
+                <div class="col-lg-4 mb-4">
                     <h5>
                         <i class="fas fa-calendar-check me-2"></i>
                         Conecta Eventos
                     </h5>
-                    <p class="mb-3">Conectando pessoas através de experiências incríveis.</p>
+                    <p class="text-white-50">
+                        Conectando pessoas através de experiências incríveis. 
+                        A melhor plataforma para descobrir e organizar eventos.
+                    </p>
                     <div class="d-flex gap-3">
-                        <a href="#" class="text-white-50" aria-label="Facebook">
-                            <i class="fab fa-facebook fa-lg"></i>
+                        <a href="#" class="text-white-50 fs-4">
+                            <i class="fab fa-facebook"></i>
                         </a>
-                        <a href="#" class="text-white-50" aria-label="Instagram">
-                            <i class="fab fa-instagram fa-lg"></i>
+                        <a href="#" class="text-white-50 fs-4">
+                            <i class="fab fa-instagram"></i>
                         </a>
-                        <a href="#" class="text-white-50" aria-label="Twitter">
-                            <i class="fab fa-twitter fa-lg"></i>
+                        <a href="#" class="text-white-50 fs-4">
+                            <i class="fab fa-twitter"></i>
                         </a>
-                        <a href="#" class="text-white-50" aria-label="LinkedIn">
-                            <i class="fab fa-linkedin fa-lg"></i>
+                        <a href="#" class="text-white-50 fs-4">
+                            <i class="fab fa-linkedin"></i>
                         </a>
                     </div>
                 </div>
+                
+                <div class="col-lg-2 col-md-6 mb-4">
+                    <h6>Eventos</h6>
+                    <ul class="list-unstyled">
+                        <li><a href="?categoria=1" class="text-white-50 text-decoration-none">Tecnologia</a></li>
+                        <li><a href="?categoria=2" class="text-white-50 text-decoration-none">Negócios</a></li>
+                        <li><a href="?categoria=3" class="text-white-50 text-decoration-none">Marketing</a></li>
+                        <li><a href="?categoria=4" class="text-white-50 text-decoration-none">Design</a></li>
+                    </ul>
+                </div>
+                
+                <div class="col-lg-2 col-md-6 mb-4">
+                    <h6>Para Organizadores</h6>
+                    <ul class="list-unstyled">
+                        <li><a href="views/auth/register.php?tipo=organizador" class="text-white-50 text-decoration-none">Criar Conta</a></li>
+                        <li><a href="views/events/create.php" class="text-white-50 text-decoration-none">Criar Evento</a></li>
+                        <li><a href="#" class="text-white-50 text-decoration-none">Preços</a></li>
+                        <li><a href="#" class="text-white-50 text-decoration-none">Recursos</a></li>
+                    </ul>
+                </div>
+                
+                <div class="col-lg-2 col-md-6 mb-4">
+                    <h6>Suporte</h6>
+                    <ul class="list-unstyled">
+                        <li><a href="#" class="text-white-50 text-decoration-none">Central de Ajuda</a></li>
+                        <li><a href="#" class="text-white-50 text-decoration-none">Contato</a></li>
+                        <li><a href="#" class="text-white-50 text-decoration-none">FAQ</a></li>
+                        <li><a href="#" class="text-white-50 text-decoration-none">Termos de Uso</a></li>
+                    </ul>
+                </div>
+                
+                <div class="col-lg-2 col-md-6 mb-4">
+                    <h6>Empresa</h6>
+                    <ul class="list-unstyled">
+                        <li><a href="#" class="text-white-50 text-decoration-none">Sobre Nós</a></li>
+                        <li><a href="#" class="text-white-50 text-decoration-none">Carreira</a></li>
+                        <li><a href="#" class="text-white-50 text-decoration-none">Imprensa</a></li>
+                        <li><a href="#" class="text-white-50 text-decoration-none">Blog</a></li>
+                    </ul>
+                </div>
+            </div>
+            
+            <hr class="my-4">
+            
+            <div class="row align-items-center">
+                <div class="col-md-6">
+                    <p class="mb-0 text-white-50">
+                        &copy; <?php echo date('Y'); ?> Conecta Eventos. Todos os direitos reservados.
+                    </p>
+                </div>
                 <div class="col-md-6 text-md-end">
-                    <p class="mb-1">&copy; <?php echo date('Y'); ?> Conecta Eventos.</p>
-                    <p class="mb-1 text-white-50">Desenvolvido com <i class="fas fa-heart text-danger"></i> por João Vitor da Silva</p>
-                    <?php if (!$database_connected): ?>
-                        <small class="text-warning">
-                            <i class="fas fa-exclamation-triangle me-1"></i>
-                            Modo Demo - Configure DATABASE_URL para funcionalidade completa
-                        </small>
-                    <?php else: ?>
-                        <small class="text-success">
-                            <i class="fas fa-check-circle me-1"></i>
-                            Sistema conectado e funcionando
-                        </small>
-                    <?php endif; ?>
+                    <p class="mb-0 text-white-50">
+                        Desenvolvido por <strong>João Vitor da Silva</strong>
+                    </p>
                 </div>
             </div>
         </div>
@@ -744,7 +966,33 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
     
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Auto-hide alerts after 5 seconds
+            // Animação das estatísticas
+            const statNumbers = document.querySelectorAll('.stat-number');
+            const observer = new IntersectionObserver((entries) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        const target = parseInt(entry.target.textContent);
+                        let current = 0;
+                        const increment = target / 30;
+                        
+                        const timer = setInterval(() => {
+                            current += increment;
+                            if (current >= target) {
+                                entry.target.textContent = target;
+                                clearInterval(timer);
+                            } else {
+                                entry.target.textContent = Math.floor(current);
+                            }
+                        }, 50);
+                        
+                        observer.unobserve(entry.target);
+                    }
+                });
+            });
+            
+            statNumbers.forEach(stat => observer.observe(stat));
+
+            // Auto-hide alerts
             const alerts = document.querySelectorAll('.alert');
             alerts.forEach(alert => {
                 setTimeout(() => {
@@ -752,10 +1000,42 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
                     if (bsAlert) {
                         bsAlert.close();
                     }
-                }, 5000);
+                }, 8000);
             });
 
-            // Smooth scroll for anchor links
+            // Hover effects para cards de categoria
+            const categoriaCards = document.querySelectorAll('.categoria-card');
+            categoriaCards.forEach(card => {
+                card.addEventListener('mouseenter', function() {
+                    this.style.transform = 'translateY(-5px)';
+                    this.style.boxShadow = '0 8px 25px rgba(0,0,0,0.15)';
+                });
+                card.addEventListener('mouseleave', function() {
+                    this.style.transform = 'translateY(0)';
+                    this.style.boxShadow = '';
+                });
+            });
+
+            // Loading states para formulários
+            const forms = document.querySelectorAll('form');
+            forms.forEach(form => {
+                form.addEventListener('submit', function() {
+                    const submitBtn = form.querySelector('button[type="submit"]');
+                    if (submitBtn) {
+                        const originalText = submitBtn.innerHTML;
+                        submitBtn.disabled = true;
+                        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Carregando...';
+                        
+                        // Re-enable após 5 segundos se ainda estiver na página
+                        setTimeout(() => {
+                            submitBtn.disabled = false;
+                            submitBtn.innerHTML = originalText;
+                        }, 5000);
+                    }
+                });
+            });
+
+            // Smooth scroll para links internos
             document.querySelectorAll('a[href^="#"]').forEach(anchor => {
                 anchor.addEventListener('click', function (e) {
                     e.preventDefault();
@@ -769,143 +1049,156 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
                 });
             });
 
-            // Loading states for forms
-            const forms = document.querySelectorAll('form');
-            forms.forEach(form => {
-                form.addEventListener('submit', function() {
-                    const submitBtn = form.querySelector('button[type="submit"]');
-                    if (submitBtn) {
-                        const originalText = submitBtn.innerHTML;
-                        submitBtn.disabled = true;
-                        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Carregando...';
-                        
-                        // Re-enable after 3 seconds (in case of issues)
-                        setTimeout(() => {
-                            submitBtn.disabled = false;
-                            submitBtn.innerHTML = originalText;
-                        }, 3000);
-                    }
-                });
-            });
-
-            // Error handling for broken images
-            document.querySelectorAll('img').forEach(img => {
-                img.addEventListener('error', function() {
-                    this.style.display = 'none';
-                    const parent = this.parentElement;
-                    if (parent && !parent.querySelector('.no-image')) {
-                        const fallback = document.createElement('div');
-                        fallback.className = 'no-image';
-                        fallback.innerHTML = '<i class="fas fa-image fa-3x"></i>';
-                        parent.appendChild(fallback);
-                    }
-                });
-            });
-
-            // Search form enhancements
-            const searchInputs = document.querySelectorAll('input[name="busca"]');
-            searchInputs.forEach(input => {
-                // Clear search button
-                const clearBtn = document.createElement('button');
-                clearBtn.type = 'button';
-                clearBtn.className = 'btn btn-outline-secondary btn-sm ms-2';
-                clearBtn.innerHTML = '<i class="fas fa-times"></i>';
-                clearBtn.title = 'Limpar busca';
-                clearBtn.style.display = input.value ? 'inline-block' : 'none';
-                
-                clearBtn.addEventListener('click', function() {
-                    input.value = '';
-                    this.style.display = 'none';
-                    input.form.submit();
-                });
-                
-                input.addEventListener('input', function() {
-                    clearBtn.style.display = this.value ? 'inline-block' : 'none';
-                });
-                
-                if (input.parentElement.tagName !== 'DIV') {
-                    const wrapper = document.createElement('div');
-                    wrapper.className = 'd-flex align-items-center';
-                    input.parentNode.insertBefore(wrapper, input);
-                    wrapper.appendChild(input);
-                    wrapper.appendChild(clearBtn);
+            // Parallax effect para hero section
+            window.addEventListener('scroll', function() {
+                const scrolled = window.pageYOffset;
+                const parallax = document.querySelector('.hero-section');
+                if (parallax) {
+                    const speed = scrolled * 0.5;
+                    parallax.style.transform = `translateY(${speed}px)`;
                 }
             });
 
-            // Stats counter animation
-            const statNumbers = document.querySelectorAll('.stat-number');
-            const animateStats = (entries, observer) => {
-                entries.forEach(entry => {
-                    if (entry.isIntersecting) {
-                        const target = parseInt(entry.target.textContent);
-                        let current = 0;
-                        const increment = target / 30;
-                        const timer = setInterval(() => {
-                            current += increment;
-                            if (current >= target) {
-                                entry.target.textContent = target;
-                                clearInterval(timer);
-                            } else {
-                                entry.target.textContent = Math.floor(current);
-                            }
-                        }, 50);
-                        observer.unobserve(entry.target);
-                    }
-                });
-            };
-
-            if ('IntersectionObserver' in window) {
-                const observer = new IntersectionObserver(animateStats, {
-                    threshold: 0.5
-                });
-                statNumbers.forEach(stat => observer.observe(stat));
-            }
-
-            // Add loading animation to event cards
-            const eventCards = document.querySelectorAll('.event-card');
-            eventCards.forEach((card, index) => {
-                card.style.opacity = '0';
-                card.style.transform = 'translateY(20px)';
+            // Toast notifications system
+            window.showToast = function(message, type = 'info', duration = 5000) {
+                const toast = document.createElement('div');
+                toast.className = `toast align-items-center text-white bg-${type} border-0 show`;
+                toast.setAttribute('role', 'alert');
+                toast.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    z-index: 9999;
+                    min-width: 300px;
+                `;
+                
+                toast.innerHTML = `
+                    <div class="d-flex">
+                        <div class="toast-body">
+                            <i class="fas fa-${type === 'success' ? 'check-circle' : 'info-circle'} me-2"></i>
+                            ${message}
+                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" onclick="this.parentElement.parentElement.remove()"></button>
+                    </div>
+                `;
+                
+                document.body.appendChild(toast);
                 
                 setTimeout(() => {
-                    card.style.transition = 'all 0.5s ease';
-                    card.style.opacity = '1';
-                    card.style.transform = 'translateY(0)';
-                }, index * 100);
-            });
+                    if (toast.parentElement) {
+                        toast.remove();
+                    }
+                }, duration);
+            };
 
-            // Performance monitoring
-            if ('performance' in window) {
-                window.addEventListener('load', function() {
-                    setTimeout(() => {
-                        const perfData = performance.getEntriesByType('navigation')[0];
-                        if (perfData && perfData.loadEventEnd > 5000) {
-                            console.warn('Página carregou lentamente:', Math.round(perfData.loadEventEnd) + 'ms');
-                        } else {
-                            console.log('Página carregada em:', Math.round(perfData.loadEventEnd) + 'ms');
-                        }
-                    }, 0);
-                });
+            // Debug info no console
+            console.log('%c🎉 Conecta Eventos', 'color: #667eea; font-size: 2em; font-weight: bold;');
+            console.log('Sistema carregado com sucesso!');
+            console.log('Eventos disponíveis:', <?php echo count($eventos); ?>);
+            console.log('Banco conectado:', <?php echo $database_connected ? 'true' : 'false'; ?>);
+        });
+    </script>
+
+    <style>
+        .categoria-card {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        
+        .event-card-destaque {
+            background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%);
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+        }
+        
+        .event-card-destaque:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
+        }
+        
+        .hero-section {
+            min-height: 70vh;
+            display: flex;
+            align-items: center;
+        }
+        
+        @media (max-width: 768px) {
+            .hero-title {
+                font-size: 2rem;
+            }
+            
+            .search-card {
+                padding: 1.5rem;
+            }
+            
+            .stat-number {
+                font-size: 2rem;
+            }
+        }
+        
+        /* Melhorias de acessibilidade */
+        .btn:focus,
+        .form-control:focus,
+        .form-select:focus {
+            outline: 2px solid #667eea;
+            outline-offset: 2px;
+        }
+        
+        /* Preloader */
+        .page-loader {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            opacity: 1;
+            transition: opacity 0.5s ease;
+        }
+        
+        .page-loader.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+        
+        .loader-spinner {
+            width: 50px;
+            height: 50px;
+            border: 3px solid rgba(255, 255, 255, 0.3);
+            border-top: 3px solid white;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+
+    <!-- Preloader -->
+    <div class="page-loader" id="pageLoader">
+        <div class="text-center text-white">
+            <div class="loader-spinner mx-auto mb-3"></div>
+            <div>Carregando eventos...</div>
+        </div>
+    </div>
+
+    <script>
+        // Hide preloader when page is fully loaded
+        window.addEventListener('load', function() {
+            const loader = document.getElementById('pageLoader');
+            if (loader) {
+                setTimeout(() => {
+                    loader.classList.add('hidden');
+                    setTimeout(() => loader.remove(), 500);
+                }, 500);
             }
         });
-
-        // Global error handler
-        window.addEventListener('error', function(e) {
-            console.error('Erro JavaScript:', e.error);
-        });
-
-        // Service Worker registration (for future PWA features)
-        if ('serviceWorker' in navigator && window.location.protocol === 'https:') {
-            window.addEventListener('load', function() {
-                navigator.serviceWorker.register('/sw.js')
-                    .then(registration => {
-                        console.log('Service Worker registrado:', registration);
-                    })
-                    .catch(registrationError => {
-                        console.log('Falha no Service Worker:', registrationError);
-                    });
-            });
-        }
     </script>
 </body>
 </html>
