@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// CRIAR NOVO EVENTO
+// CRIAR NOVO EVENTO - VERSÃO CORRIGIDA
 // Local: views/events/create.php
 // ==========================================
 
@@ -29,29 +29,48 @@ $error_message = '';
 
 // Processar formulário
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    // Simular criação do evento
-    $titulo = trim($_POST['titulo'] ?? '');
-    
-    if (!empty($titulo)) {
-        $success_message = "Evento '$titulo' criado com sucesso! Você pode visualizá-lo em 'Meus Eventos'.";
-    } else {
-        $error_message = "Por favor, preencha pelo menos o título do evento.";
+    try {
+        // Carregar dependências necessárias
+        require_once '../../config/config.php';
+        require_once '../../includes/session.php';
+        require_once '../../controllers/EventController.php';
+        
+        $eventController = new EventController();
+        $result = $eventController->create($_POST);
+        
+        if ($result['success']) {
+            $success_message = $result['message'];
+            // Limpar dados do formulário após sucesso
+            $_POST = [];
+        } else {
+            $error_message = $result['message'];
+        }
+    } catch (Exception $e) {
+        error_log("Erro ao criar evento: " . $e->getMessage());
+        $error_message = "Erro interno do sistema. Tente novamente.";
     }
 }
 
-// Categorias disponíveis
-$categorias = [
-    1 => 'Tecnologia',
-    2 => 'Negócios',
-    3 => 'Marketing',
-    4 => 'Design',
-    5 => 'Educação',
-    6 => 'Entretenimento',
-    7 => 'Saúde',
-    8 => 'Esportes',
-    9 => 'Arte & Cultura',
-    10 => 'Sustentabilidade'
-];
+// Buscar categorias
+$categorias = [];
+try {
+    if (!isset($eventController)) {
+        require_once '../../config/config.php';
+        require_once '../../controllers/EventController.php';
+        $eventController = new EventController();
+    }
+    $categorias = $eventController->getCategories();
+} catch (Exception $e) {
+    error_log("Erro ao buscar categorias: " . $e->getMessage());
+    // Categorias de fallback
+    $categorias = [
+        ['id_categoria' => 1, 'nome' => 'Tecnologia'],
+        ['id_categoria' => 2, 'nome' => 'Negócios'],
+        ['id_categoria' => 3, 'nome' => 'Marketing'],
+        ['id_categoria' => 4, 'nome' => 'Design'],
+        ['id_categoria' => 5, 'nome' => 'Educação']
+    ];
+}
 ?>
 
 <!DOCTYPE html>
@@ -133,6 +152,10 @@ $categorias = [
             background: transparent;
             padding: 0;
         }
+        
+        .required {
+            color: #dc3545;
+        }
     </style>
 </head>
 <body>
@@ -192,6 +215,14 @@ $categorias = [
                 <i class="fas fa-check-circle me-2"></i>
                 <?php echo htmlspecialchars($success_message); ?>
                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                <div class="mt-3">
+                    <a href="list.php" class="btn btn-success">
+                        <i class="fas fa-list me-2"></i>Ver Meus Eventos
+                    </a>
+                    <a href="<?php echo $dashboardUrl; ?>" class="btn btn-outline-success ms-2">
+                        <i class="fas fa-tachometer-alt me-2"></i>Ir ao Dashboard
+                    </a>
+                </div>
             </div>
         <?php endif; ?>
         
@@ -210,20 +241,20 @@ $categorias = [
                 
                 <div class="row">
                     <div class="col-md-8 mb-3">
-                        <label for="titulo" class="form-label">Título do Evento *</label>
+                        <label for="titulo" class="form-label">Título do Evento <span class="required">*</span></label>
                         <input type="text" class="form-control" id="titulo" name="titulo" required
                                value="<?php echo htmlspecialchars($_POST['titulo'] ?? ''); ?>"
                                placeholder="Ex: Workshop de Desenvolvimento Web">
                     </div>
                     
                     <div class="col-md-4 mb-3">
-                        <label for="categoria" class="form-label">Categoria *</label>
+                        <label for="categoria" class="form-label">Categoria <span class="required">*</span></label>
                         <select class="form-select" id="categoria" name="categoria" required>
                             <option value="">Selecione uma categoria</option>
-                            <?php foreach ($categorias as $id => $nome): ?>
-                                <option value="<?php echo $id; ?>" 
-                                        <?php echo ($_POST['categoria'] ?? '') == $id ? 'selected' : ''; ?>>
-                                    <?php echo $nome; ?>
+                            <?php foreach ($categorias as $categoria): ?>
+                                <option value="<?php echo $categoria['id_categoria']; ?>" 
+                                        <?php echo ($_POST['categoria'] ?? '') == $categoria['id_categoria'] ? 'selected' : ''; ?>>
+                                    <?php echo htmlspecialchars($categoria['nome']); ?>
                                 </option>
                             <?php endforeach; ?>
                         </select>
@@ -231,16 +262,9 @@ $categorias = [
                 </div>
                 
                 <div class="mb-3">
-                    <label for="descricao" class="form-label">Descrição Curta *</label>
-                    <textarea class="form-control" id="descricao" name="descricao" rows="3" required
-                              placeholder="Descrição resumida do evento (máximo 200 caracteres)"><?php echo htmlspecialchars($_POST['descricao'] ?? ''); ?></textarea>
-                    <div class="form-text">Máximo 200 caracteres</div>
-                </div>
-                
-                <div class="mb-3">
-                    <label for="descricao_detalhada" class="form-label">Descrição Detalhada</label>
-                    <textarea class="form-control" id="descricao_detalhada" name="descricao_detalhada" rows="5"
-                              placeholder="Descrição completa do evento, programação, palestrantes, etc."><?php echo htmlspecialchars($_POST['descricao_detalhada'] ?? ''); ?></textarea>
+                    <label for="descricao" class="form-label">Descrição <span class="required">*</span></label>
+                    <textarea class="form-control" id="descricao" name="descricao" rows="4" required
+                              placeholder="Descreva seu evento de forma clara e atrativa"><?php echo htmlspecialchars($_POST['descricao'] ?? ''); ?></textarea>
                 </div>
             </div>
 
@@ -250,13 +274,14 @@ $categorias = [
                 
                 <div class="row">
                     <div class="col-md-3 mb-3">
-                        <label for="data_inicio" class="form-label">Data de Início *</label>
+                        <label for="data_inicio" class="form-label">Data de Início <span class="required">*</span></label>
                         <input type="date" class="form-control" id="data_inicio" name="data_inicio" required
-                               value="<?php echo $_POST['data_inicio'] ?? ''; ?>">
+                               value="<?php echo $_POST['data_inicio'] ?? ''; ?>"
+                               min="<?php echo date('Y-m-d'); ?>">
                     </div>
                     
                     <div class="col-md-3 mb-3">
-                        <label for="horario_inicio" class="form-label">Horário de Início *</label>
+                        <label for="horario_inicio" class="form-label">Horário de Início <span class="required">*</span></label>
                         <input type="time" class="form-control" id="horario_inicio" name="horario_inicio" required
                                value="<?php echo $_POST['horario_inicio'] ?? ''; ?>">
                     </div>
@@ -265,12 +290,14 @@ $categorias = [
                         <label for="data_fim" class="form-label">Data de Fim</label>
                         <input type="date" class="form-control" id="data_fim" name="data_fim"
                                value="<?php echo $_POST['data_fim'] ?? ''; ?>">
+                        <div class="form-text">Se vazio, será igual à data de início</div>
                     </div>
                     
                     <div class="col-md-3 mb-3">
                         <label for="horario_fim" class="form-label">Horário de Fim</label>
                         <input type="time" class="form-control" id="horario_fim" name="horario_fim"
                                value="<?php echo $_POST['horario_fim'] ?? ''; ?>">
+                        <div class="form-text">Se vazio, será igual ao horário de início</div>
                     </div>
                 </div>
             </div>
@@ -281,14 +308,14 @@ $categorias = [
                 
                 <div class="row">
                     <div class="col-md-6 mb-3">
-                        <label for="local_nome" class="form-label">Nome do Local *</label>
+                        <label for="local_nome" class="form-label">Nome do Local <span class="required">*</span></label>
                         <input type="text" class="form-control" id="local_nome" name="local_nome" required
                                value="<?php echo htmlspecialchars($_POST['local_nome'] ?? ''); ?>"
                                placeholder="Ex: Centro de Convenções SP">
                     </div>
                     
                     <div class="col-md-6 mb-3">
-                        <label for="local_endereco" class="form-label">Endereço Completo *</label>
+                        <label for="local_endereco" class="form-label">Endereço Completo <span class="required">*</span></label>
                         <input type="text" class="form-control" id="local_endereco" name="local_endereco" required
                                value="<?php echo htmlspecialchars($_POST['local_endereco'] ?? ''); ?>"
                                placeholder="Rua, número, bairro">
@@ -297,13 +324,14 @@ $categorias = [
                 
                 <div class="row">
                     <div class="col-md-4 mb-3">
-                        <label for="local_cidade" class="form-label">Cidade *</label>
+                        <label for="local_cidade" class="form-label">Cidade <span class="required">*</span></label>
                         <input type="text" class="form-control" id="local_cidade" name="local_cidade" required
-                               value="<?php echo htmlspecialchars($_POST['local_cidade'] ?? ''); ?>">
+                               value="<?php echo htmlspecialchars($_POST['local_cidade'] ?? ''); ?>"
+                               placeholder="Nome da cidade">
                     </div>
                     
                     <div class="col-md-4 mb-3">
-                        <label for="local_estado" class="form-label">Estado *</label>
+                        <label for="local_estado" class="form-label">Estado <span class="required">*</span></label>
                         <select class="form-select" id="local_estado" name="local_estado" required>
                             <option value="">Selecione</option>
                             <option value="AC" <?php echo ($_POST['local_estado'] ?? '') === 'AC' ? 'selected' : ''; ?>>Acre</option>
@@ -380,19 +408,6 @@ $categorias = [
                 </div>
             </div>
 
-            <!-- Imagem -->
-            <div class="form-section">
-                <h4><i class="fas fa-image me-2"></i>Imagem do Evento</h4>
-                
-                <div class="upload-area" onclick="document.getElementById('imagem_capa').click();">
-                    <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
-                    <h5>Clique para enviar uma imagem</h5>
-                    <p class="text-muted">JPG, PNG ou GIF até 5MB</p>
-                    <input type="file" id="imagem_capa" name="imagem_capa" 
-                           accept="image/*" style="display: none;">
-                </div>
-            </div>
-
             <!-- Informações Adicionais -->
             <div class="form-section">
                 <h4><i class="fas fa-list-ul me-2"></i>Informações Adicionais</h4>
@@ -445,37 +460,30 @@ $categorias = [
                 e.target.value = value;
             });
 
-            // Preview da imagem
-            const imagemInput = document.getElementById('imagem_capa');
-            const uploadArea = document.querySelector('.upload-area');
-            
-            imagemInput.addEventListener('change', function(e) {
-                const file = e.target.files[0];
-                if (file) {
-                    uploadArea.innerHTML = `
-                        <i class="fas fa-check-circle fa-3x text-success mb-3"></i>
-                        <h5>Imagem selecionada!</h5>
-                        <p class="text-muted">${file.name}</p>
-                    `;
-                }
-            });
-
             // Validação da data
             const dataInicio = document.getElementById('data_inicio');
-            const hoje = new Date().toISOString().split('T')[0];
-            dataInicio.min = hoje;
-
+            const dataFim = document.getElementById('data_fim');
+            
             dataInicio.addEventListener('change', function() {
-                const dataFim = document.getElementById('data_fim');
                 dataFim.min = this.value;
+                if (dataFim.value && dataFim.value < this.value) {
+                    dataFim.value = this.value;
+                }
             });
 
             // Loading no submit
             const form = document.getElementById('createEventForm');
             form.addEventListener('submit', function() {
                 const submitBtn = form.querySelector('button[type="submit"]');
+                const originalText = submitBtn.innerHTML;
                 submitBtn.disabled = true;
                 submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Criando evento...';
+                
+                // Re-enable after 5 seconds if still on page (error case)
+                setTimeout(() => {
+                    submitBtn.disabled = false;
+                    submitBtn.innerHTML = originalText;
+                }, 5000);
             });
 
             // Auto-hide alerts
@@ -486,7 +494,7 @@ $categorias = [
                     if (bsAlert) {
                         bsAlert.close();
                     }
-                }, 5000);
+                }, 7000);
             });
         });
     </script>

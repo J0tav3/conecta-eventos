@@ -1,88 +1,65 @@
 <?php
-// ========================================
-// SISTEMA DE SESSÃO SIMPLIFICADO
-// ========================================
+// ==========================================
+// FUNÇÕES DE SESSÃO - VERSÃO CORRIGIDA
 // Local: includes/session.php
-// ========================================
+// ==========================================
 
 // Iniciar sessão se não estiver iniciada
 if (session_status() == PHP_SESSION_NONE) {
     session_start();
 }
 
-// Definir constantes se não estiverem definidas
-if (!defined('SITE_URL')) {
-    define('SITE_URL', 'https://conecta-eventos.railway.internal');
-}
-
 /**
- * Verifica se o usuário está logado
+ * Verificar se usuário está logado
  */
 function isLoggedIn() {
-    return isset($_SESSION['user_id']) && !empty($_SESSION['user_id']);
+    return isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;
 }
 
 /**
- * Obtém o ID do usuário logado
- */
-function getUserId() {
-    return $_SESSION['user_id'] ?? null;
-}
-
-/**
- * Obtém o nome do usuário logado
- */
-function getUserName() {
-    return $_SESSION['user_name'] ?? 'Usuário';
-}
-
-/**
- * Obtém o email do usuário logado
- */
-function getUserEmail() {
-    return $_SESSION['user_email'] ?? null;
-}
-
-/**
- * Obtém o tipo do usuário logado
- */
-function getUserType() {
-    return $_SESSION['user_type'] ?? 'participante';
-}
-
-/**
- * Verifica se o usuário é organizador
+ * Verificar se é organizador
  */
 function isOrganizer() {
-    return isLoggedIn() && getUserType() === 'organizador';
+    return isLoggedIn() && isset($_SESSION['user_type']) && $_SESSION['user_type'] === 'organizador';
 }
 
 /**
- * Verifica se o usuário é participante
+ * Verificar se é participante
  */
 function isParticipant() {
-    return isLoggedIn() && getUserType() === 'participante';
+    return isLoggedIn() && isset($_SESSION['user_type']) && $_SESSION['user_type'] === 'participante';
 }
 
 /**
- * Obtém dados completos do usuário logado
+ * Obter ID do usuário
  */
-function getCurrentUser() {
-    if (!isLoggedIn()) {
-        return null;
-    }
-    
-    return [
-        'id' => getUserId(),
-        'name' => getUserName(),
-        'email' => getUserEmail(),
-        'type' => getUserType(),
-        'login_time' => $_SESSION['login_time'] ?? null
-    ];
+function getUserId() {
+    return isLoggedIn() ? ($_SESSION['user_id'] ?? null) : null;
 }
 
 /**
- * Requer que o usuário esteja logado
+ * Obter nome do usuário
+ */
+function getUserName() {
+    return isLoggedIn() ? ($_SESSION['user_name'] ?? 'Usuário') : null;
+}
+
+/**
+ * Obter email do usuário
+ */
+function getUserEmail() {
+    return isLoggedIn() ? ($_SESSION['user_email'] ?? '') : null;
+}
+
+/**
+ * Obter tipo do usuário
+ */
+function getUserType() {
+    return isLoggedIn() ? ($_SESSION['user_type'] ?? 'participante') : null;
+}
+
+/**
+ * Exigir login
  */
 function requireLogin() {
     if (!isLoggedIn()) {
@@ -92,42 +69,95 @@ function requireLogin() {
 }
 
 /**
- * Requer que o usuário NÃO esteja logado (para páginas de login/registro)
+ * Exigir que seja organizador
  */
-function requireGuest() {
-    if (isLoggedIn()) {
-        $redirectUrl = isOrganizer() 
-            ? SITE_URL . '/views/dashboard/organizer.php'
-            : SITE_URL . '/views/dashboard/participant.php';
-        header('Location: ' . $redirectUrl);
+function requireOrganizer() {
+    requireLogin();
+    if (!isOrganizer()) {
+        header('Location: ' . SITE_URL . '/index.php');
         exit();
     }
 }
 
 /**
- * Realiza login do usuário
+ * Exigir que seja participante
  */
-function loginUser($userId, $userName, $userEmail, $userType) {
-    $_SESSION['user_id'] = $userId;
-    $_SESSION['user_name'] = $userName;
-    $_SESSION['user_email'] = $userEmail;
-    $_SESSION['user_type'] = $userType;
-    $_SESSION['login_time'] = time();
-    
-    // Regenerar ID da sessão para segurança
-    session_regenerate_id(true);
-    
-    return true;
+function requireParticipant() {
+    requireLogin();
+    if (!isParticipant()) {
+        header('Location: ' . SITE_URL . '/index.php');
+        exit();
+    }
 }
 
 /**
- * Realiza logout do usuário
+ * Definir mensagem flash
  */
-function logoutUser() {
-    // Destruir todas as variáveis de sessão
+function setFlashMessage($message, $type = 'info') {
+    $_SESSION['flash_message'] = $message;
+    $_SESSION['flash_type'] = $type;
+}
+
+/**
+ * Obter e limpar mensagem flash
+ */
+function getFlashMessage() {
+    if (isset($_SESSION['flash_message'])) {
+        $message = [
+            'message' => $_SESSION['flash_message'],
+            'type' => $_SESSION['flash_type'] ?? 'info'
+        ];
+        unset($_SESSION['flash_message'], $_SESSION['flash_type']);
+        return $message;
+    }
+    return null;
+}
+
+/**
+ * Mostrar mensagem flash (para usar em views)
+ */
+function showFlashMessage() {
+    $flash = getFlashMessage();
+    if ($flash) {
+        $iconMap = [
+            'success' => 'check-circle',
+            'danger' => 'exclamation-triangle',
+            'warning' => 'exclamation-triangle',
+            'info' => 'info-circle'
+        ];
+        $icon = $iconMap[$flash['type']] ?? 'info-circle';
+        
+        echo '<div class="alert alert-' . htmlspecialchars($flash['type']) . ' alert-dismissible fade show" role="alert">';
+        echo '<i class="fas fa-' . $icon . ' me-2"></i>';
+        echo htmlspecialchars($flash['message']);
+        echo '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+        echo '</div>';
+    }
+}
+
+/**
+ * Criar sessão de usuário
+ */
+function createUserSession($userData) {
+    $_SESSION['user_id'] = $userData['id_usuario'];
+    $_SESSION['user_name'] = $userData['nome'];
+    $_SESSION['user_email'] = $userData['email'];
+    $_SESSION['user_type'] = $userData['tipo'];
+    $_SESSION['logged_in'] = true;
+    $_SESSION['login_time'] = time();
+    
+    // Regenerar ID da sessão por segurança
+    session_regenerate_id(true);
+}
+
+/**
+ * Destruir sessão
+ */
+function destroyUserSession() {
+    // Limpar variáveis de sessão
     $_SESSION = array();
     
-    // Se existe um cookie de sessão, deletá-lo
+    // Deletar cookie de sessão se existir
     if (ini_get("session.use_cookies")) {
         $params = session_get_cookie_params();
         setcookie(session_name(), '', time() - 42000,
@@ -136,208 +166,45 @@ function logoutUser() {
         );
     }
     
-    // Destruir a sessão
+    // Destruir sessão
     session_destroy();
-    
-    return true;
 }
 
 /**
- * Verifica se a sessão é válida (prevenção contra sequestro de sessão)
+ * Gerar token CSRF
  */
-function validateSession() {
-    if (!isLoggedIn()) {
-        return false;
+function generateCSRFToken() {
+    if (!isset($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
     }
-    
-    // Verificar se a sessão não expirou (24 horas)
-    $maxLifetime = 24 * 60 * 60; // 24 horas em segundos
+    return $_SESSION['csrf_token'];
+}
+
+/**
+ * Verificar token CSRF
+ */
+function verifyCSRFToken($token) {
+    return isset($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $token);
+}
+
+/**
+ * Limpar dados antigos da sessão
+ */
+function cleanupSession() {
+    // Verificar se a sessão expirou (24 horas)
+    $maxLifetime = 24 * 60 * 60;
     
     if (isset($_SESSION['login_time']) && 
         (time() - $_SESSION['login_time']) > $maxLifetime) {
-        
-        logoutUser();
+        destroyUserSession();
         return false;
     }
     
     return true;
 }
 
-/**
- * Define uma mensagem flash
- */
-function setFlashMessage($message, $type = 'info') {
-    $_SESSION['flash_message'] = $message;
-    $_SESSION['flash_type'] = $type;
-}
-
-/**
- * Obtém uma mensagem flash
- */
-function getFlashMessage() {
-    if (isset($_SESSION['flash_message'])) {
-        $message = $_SESSION['flash_message'];
-        $type = $_SESSION['flash_type'] ?? 'info';
-        
-        unset($_SESSION['flash_message']);
-        unset($_SESSION['flash_type']);
-        
-        return ['message' => $message, 'type' => $type];
-    }
-    
-    return null;
-}
-
-/**
- * Exibe uma mensagem flash (HTML)
- */
-function showFlashMessage() {
-    $flash = getFlashMessage();
-    if ($flash) {
-        $alertClass = [
-            'success' => 'alert-success',
-            'error' => 'alert-danger',
-            'danger' => 'alert-danger',
-            'warning' => 'alert-warning',
-            'info' => 'alert-info'
-        ];
-        
-        $class = $alertClass[$flash['type']] ?? 'alert-info';
-        
-        echo '<div class="alert ' . $class . ' alert-dismissible fade show" role="alert">';
-        echo '<i class="fas fa-info-circle me-2"></i>';
-        echo htmlspecialchars($flash['message']);
-        echo '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
-        echo '</div>';
-    }
-}
-
-// Validar sessão automaticamente
+// Limpar sessão automaticamente se expirou
 if (isLoggedIn()) {
-    validateSession();
+    cleanupSession();
 }
-
-// AuthController simplificado como classe compatível
-class AuthController {
-    public function isLoggedIn() {
-        return isLoggedIn();
-    }
-    
-    public function getCurrentUser() {
-        return getCurrentUser();
-    }
-    
-    public function isOrganizer() {
-        return isOrganizer();
-    }
-    
-    public function isParticipant() {
-        return isParticipant();
-    }
-    
-    public function requireAuth() {
-        requireLogin();
-    }
-    
-    public function requireGuest() {
-        requireGuest();
-    }
-    
-    public function login($email, $senha) {
-        // Tentar autenticar com database se disponível
-        if (class_exists('Database')) {
-            try {
-                $database = new Database();
-                $conn = $database->getConnection();
-                
-                $stmt = $conn->prepare("SELECT id_usuario, nome, email, senha, tipo, ativo FROM usuarios WHERE email = ? AND ativo = 1");
-                $stmt->execute([$email]);
-                
-                if ($stmt->rowCount() > 0) {
-                    $user = $stmt->fetch();
-                    
-                    if (password_verify($senha, $user['senha'])) {
-                        loginUser($user['id_usuario'], $user['nome'], $user['email'], $user['tipo']);
-                        
-                        $redirectUrl = $user['tipo'] === 'organizador' 
-                            ? SITE_URL . '/views/dashboard/organizer.php'
-                            : SITE_URL . '/views/dashboard/participant.php';
-                            
-                        return [
-                            'success' => true,
-                            'message' => 'Login realizado com sucesso!',
-                            'redirect' => $redirectUrl
-                        ];
-                    } else {
-                        return ['success' => false, 'message' => 'Senha incorreta.'];
-                    }
-                }
-                
-                return ['success' => false, 'message' => 'E-mail não encontrado.'];
-                
-            } catch (Exception $e) {
-                return ['success' => false, 'message' => 'Erro no sistema de login.'];
-            }
-        }
-        
-        return ['success' => false, 'message' => 'Sistema de autenticação indisponível.'];
-    }
-    
-    public function register($nome, $email, $senha, $confirmar_senha, $tipo) {
-        // Validar senhas
-        if ($senha !== $confirmar_senha) {
-            return ['success' => false, 'message' => 'As senhas não coincidem.'];
-        }
-        
-        // Tentar criar usuário com database se disponível
-        if (class_exists('Database')) {
-            try {
-                $database = new Database();
-                $conn = $database->getConnection();
-                
-                // Verificar se email já existe
-                $stmt = $conn->prepare("SELECT id_usuario FROM usuarios WHERE email = ?");
-                $stmt->execute([$email]);
-                
-                if ($stmt->rowCount() > 0) {
-                    return ['success' => false, 'message' => 'Este e-mail já está cadastrado.'];
-                }
-                
-                // Criar usuário
-                $senha_hash = password_hash($senha, PASSWORD_DEFAULT);
-                $stmt = $conn->prepare("INSERT INTO usuarios (nome, email, senha, tipo) VALUES (?, ?, ?, ?)");
-                
-                if ($stmt->execute([$nome, $email, $senha_hash, $tipo])) {
-                    return [
-                        'success' => true,
-                        'message' => 'Usuário cadastrado com sucesso!',
-                        'user_id' => $conn->lastInsertId()
-                    ];
-                }
-                
-                return ['success' => false, 'message' => 'Erro ao cadastrar usuário.'];
-                
-            } catch (Exception $e) {
-                return ['success' => false, 'message' => 'Erro no sistema de cadastro.'];
-            }
-        }
-        
-        return ['success' => false, 'message' => 'Sistema de cadastro indisponível.'];
-    }
-    
-    public function logout() {
-        logoutUser();
-        return [
-            'success' => true,
-            'message' => 'Logout realizado com sucesso!',
-            'redirect' => SITE_URL . '/index.php'
-        ];
-    }
-    
-    public function validateSession() {
-        return validateSession();
-    }
-}
-
-// Instância global para compatibilidade
-$auth = new AuthController();
+?>

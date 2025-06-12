@@ -1,34 +1,33 @@
 <?php
 // ==========================================
-// EVENT CONTROLLER - VERSÃO CORRIGIDA
+// EVENT CONTROLLER - VERSÃO COM BANCO REAL
 // Local: controllers/EventController.php
 // ==========================================
 
-// Remover os requires que estão causando erro
-// require_once '../models/Event.php';
-// require_once '../models/User.php';
-// require_once '../models/Category.php';
+require_once __DIR__ . '/../config/database.php';
 
 class EventController {
     private $db;
     private $conn;
 
     public function __construct() {
-        // Tentar conectar com banco, mas não falhar se não conseguir
         try {
-            if (class_exists('Database')) {
-                $this->db = new Database();
-                $this->conn = $this->db->getConnection();
+            $this->db = Database::getInstance();
+            $this->conn = $this->db->getConnection();
+            
+            if (!$this->conn) {
+                throw new Exception("Falha ao conectar com o banco de dados");
             }
         } catch (Exception $e) {
-            error_log("EventController: Erro ao conectar com banco: " . $e->getMessage());
-            $this->conn = null;
+            error_log("EventController: Erro ao conectar: " . $e->getMessage());
+            throw $e;
         }
     }
 
-    // Buscar eventos públicos
+    /**
+     * Buscar eventos públicos
+     */
     public function getPublicEvents($params = []) {
-        // Se não há conexão, retornar dados de exemplo
         if (!$this->conn) {
             return $this->getExampleEvents($params);
         }
@@ -43,15 +42,15 @@ class EventController {
                         u.nome as nome_organizador,
                         COUNT(i.id_inscricao) as total_inscritos
                      FROM eventos e
-                     LEFT JOIN categorias c ON e.categoria_id = c.id_categoria
-                     LEFT JOIN usuarios u ON e.organizador_id = u.id_usuario
-                     LEFT JOIN inscricoes i ON e.id_evento = i.evento_id
+                     LEFT JOIN categorias c ON e.id_categoria = c.id_categoria
+                     LEFT JOIN usuarios u ON e.id_organizador = u.id_usuario
+                     LEFT JOIN inscricoes i ON e.id_evento = i.id_evento
                      WHERE e.status = 'publicado'
                      AND e.data_inicio >= CURDATE()";
 
             // Aplicar filtros
             if (!empty($params['categoria_id'])) {
-                $query .= " AND e.categoria_id = :categoria_id";
+                $query .= " AND e.id_categoria = :categoria_id";
             }
             
             if (!empty($params['cidade'])) {
@@ -69,7 +68,7 @@ class EventController {
             $query .= " GROUP BY e.id_evento";
             
             if ($ordem === 'destaque') {
-                $query .= " ORDER BY total_inscritos DESC, e.data_inicio ASC";
+                $query .= " ORDER BY e.destaque DESC, total_inscritos DESC, e.data_inicio ASC";
             } else {
                 $query .= " ORDER BY e.data_inicio ASC";
             }
@@ -110,15 +109,16 @@ class EventController {
         }
     }
 
-    // Buscar categorias
+    /**
+     * Buscar categorias
+     */
     public function getCategories() {
-        // Se não há conexão, retornar dados de exemplo
         if (!$this->conn) {
             return $this->getExampleCategories();
         }
 
         try {
-            $query = "SELECT * FROM categorias WHERE status = 'ativo' ORDER BY nome ASC";
+            $query = "SELECT * FROM categorias WHERE ativo = 1 ORDER BY nome ASC";
             $stmt = $this->conn->prepare($query);
             $stmt->execute();
             
@@ -131,8 +131,10 @@ class EventController {
         }
     }
 
-    // Buscar evento por ID
-    public function getEventById($id) {
+    /**
+     * Buscar evento por ID
+     */
+    public function getById($id) {
         if (!$this->conn) {
             return null;
         }
@@ -145,9 +147,9 @@ class EventController {
                         u.email as email_organizador,
                         COUNT(i.id_inscricao) as total_inscritos
                      FROM eventos e
-                     LEFT JOIN categorias c ON e.categoria_id = c.id_categoria
-                     LEFT JOIN usuarios u ON e.organizador_id = u.id_usuario
-                     LEFT JOIN inscricoes i ON e.id_evento = i.evento_id
+                     LEFT JOIN categorias c ON e.id_categoria = c.id_categoria
+                     LEFT JOIN usuarios u ON e.id_organizador = u.id_usuario
+                     LEFT JOIN inscricoes i ON e.id_evento = i.id_evento
                      WHERE e.id_evento = :id
                      GROUP BY e.id_evento";
 
@@ -163,7 +165,132 @@ class EventController {
         }
     }
 
-    // Formatar evento para exibição
+    /**
+     * Criar novo evento
+     */
+    public function create($data) {
+        if (!$this->conn) {
+            return ['success' => false, 'message' => 'Banco de dados indisponível'];
+        }
+
+        try {
+            // Validar dados obrigatórios
+            $required = ['titulo', 'descricao', 'data_inicio', 'horario_inicio', 'local_nome', 'local_endereco', 'local_cidade', 'local_estado'];
+            foreach ($required as $field) {
+                if (empty($data[$field])) {
+                    return ['success' => false, 'message' => "Campo obrigatório: $field"];
+                }
+            }
+
+            // Verificar se usuário está logado
+            session_start();
+            if (!isset($_SESSION['user_id'])) {
+                return ['success' => false, 'message' => 'Usuário não logado'];
+            }
+
+            $organizador_id = $_SESSION['user_id'];
+
+            // Preparar dados
+            $titulo = trim($data['titulo']);
+            $descricao = trim($data['descricao']);
+            $id_categoria = !empty($data['categoria']) ? (int)$data['categoria'] : null;
+            $data_inicio = $data['data_inicio'];
+            $data_fim = !empty($data['data_fim']) ? $data['data_fim'] : $data['data_inicio'];
+            $horario_inicio = $data['horario_inicio'];
+            $horario_fim = !empty($data['horario_fim']) ? $data['horario_fim'] : $data['horario_inicio'];
+            $local_nome = trim($data['local_nome']);
+            $local_endereco = trim($data['local_endereco']);
+            $local_cidade = trim($data['local_cidade']);
+            $local_estado = $data['local_estado'];
+            $local_cep = !empty($data['local_cep']) ? $data['local_cep'] : null;
+            $evento_gratuito = isset($data['evento_gratuito']) ? 1 : 0;
+            $preco = $evento_gratuito ? 0 : (float)($data['preco'] ?? 0);
+            $capacidade_maxima = !empty($data['max_participantes']) ? (int)$data['max_participantes'] : null;
+            $requisitos = !empty($data['requisitos']) ? trim($data['requisitos']) : null;
+            $informacoes_adicionais = !empty($data['o_que_levar']) ? trim($data['o_que_levar']) : null;
+
+            // SQL de inserção
+            $sql = "INSERT INTO eventos (
+                        id_organizador, id_categoria, titulo, descricao, 
+                        data_inicio, data_fim, horario_inicio, horario_fim,
+                        local_nome, local_endereco, local_cidade, local_estado, local_cep,
+                        evento_gratuito, preco, capacidade_maxima,
+                        requisitos, informacoes_adicionais, status
+                    ) VALUES (
+                        :organizador_id, :categoria_id, :titulo, :descricao,
+                        :data_inicio, :data_fim, :horario_inicio, :horario_fim,
+                        :local_nome, :local_endereco, :local_cidade, :local_estado, :local_cep,
+                        :evento_gratuito, :preco, :capacidade_maxima,
+                        :requisitos, :informacoes_adicionais, 'rascunho'
+                    )";
+
+            $stmt = $this->conn->prepare($sql);
+
+            // Bind dos parâmetros
+            $stmt->bindParam(':organizador_id', $organizador_id);
+            $stmt->bindParam(':categoria_id', $id_categoria);
+            $stmt->bindParam(':titulo', $titulo);
+            $stmt->bindParam(':descricao', $descricao);
+            $stmt->bindParam(':data_inicio', $data_inicio);
+            $stmt->bindParam(':data_fim', $data_fim);
+            $stmt->bindParam(':horario_inicio', $horario_inicio);
+            $stmt->bindParam(':horario_fim', $horario_fim);
+            $stmt->bindParam(':local_nome', $local_nome);
+            $stmt->bindParam(':local_endereco', $local_endereco);
+            $stmt->bindParam(':local_cidade', $local_cidade);
+            $stmt->bindParam(':local_estado', $local_estado);
+            $stmt->bindParam(':local_cep', $local_cep);
+            $stmt->bindParam(':evento_gratuito', $evento_gratuito);
+            $stmt->bindParam(':preco', $preco);
+            $stmt->bindParam(':capacidade_maxima', $capacidade_maxima);
+            $stmt->bindParam(':requisitos', $requisitos);
+            $stmt->bindParam(':informacoes_adicionais', $informacoes_adicionais);
+
+            if ($stmt->execute()) {
+                $evento_id = $this->conn->lastInsertId();
+                return [
+                    'success' => true,
+                    'message' => 'Evento criado com sucesso!',
+                    'evento_id' => $evento_id
+                ];
+            } else {
+                return ['success' => false, 'message' => 'Erro ao criar evento'];
+            }
+
+        } catch (Exception $e) {
+            error_log("Erro ao criar evento: " . $e->getMessage());
+            return ['success' => false, 'message' => 'Erro interno: ' . $e->getMessage()];
+        }
+    }
+
+    /**
+     * Verificar se usuário pode editar evento
+     */
+    public function canEdit($evento_id) {
+        if (!$this->conn) {
+            return false;
+        }
+
+        session_start();
+        if (!isset($_SESSION['user_id'])) {
+            return false;
+        }
+
+        try {
+            $stmt = $this->conn->prepare("SELECT id_organizador FROM eventos WHERE id_evento = ?");
+            $stmt->execute([$evento_id]);
+            $evento = $stmt->fetch();
+
+            return $evento && $evento['id_organizador'] == $_SESSION['user_id'];
+        } catch (Exception $e) {
+            error_log("Erro ao verificar permissão: " . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Formatar evento para exibição
+     */
     public function formatEventForDisplay($event) {
         if (!$event) {
             return null;
@@ -188,7 +315,56 @@ class EventController {
         return $event;
     }
 
-    // Dados de exemplo quando não há banco
+    /**
+     * Buscar eventos do organizador
+     */
+    public function getEventsByOrganizer($organizador_id, $filters = []) {
+        if (!$this->conn) {
+            return [];
+        }
+
+        try {
+            $query = "SELECT 
+                        e.*,
+                        c.nome as nome_categoria,
+                        COUNT(i.id_inscricao) as total_inscritos
+                     FROM eventos e
+                     LEFT JOIN categorias c ON e.id_categoria = c.id_categoria
+                     LEFT JOIN inscricoes i ON e.id_evento = i.id_evento
+                     WHERE e.id_organizador = :organizador_id";
+
+            // Aplicar filtros
+            if (!empty($filters['status'])) {
+                $query .= " AND e.status = :status";
+            }
+            
+            if (!empty($filters['categoria'])) {
+                $query .= " AND c.nome = :categoria";
+            }
+
+            $query .= " GROUP BY e.id_evento ORDER BY e.data_criacao DESC";
+
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(':organizador_id', $organizador_id);
+            
+            if (!empty($filters['status'])) {
+                $stmt->bindParam(':status', $filters['status']);
+            }
+            
+            if (!empty($filters['categoria'])) {
+                $stmt->bindParam(':categoria', $filters['categoria']);
+            }
+
+            $stmt->execute();
+            return $stmt->fetchAll(PDO::FETCH_ASSOC);
+
+        } catch (Exception $e) {
+            error_log("Erro ao buscar eventos do organizador: " . $e->getMessage());
+            return [];
+        }
+    }
+
+    // Dados de exemplo quando não há banco (fallback)
     private function getExampleEvents($params = []) {
         $eventos = [
             [
@@ -201,7 +377,7 @@ class EventController {
                 'evento_gratuito' => true,
                 'preco' => 0,
                 'imagem_capa' => '',
-                'categoria_id' => 1,
+                'id_categoria' => 1,
                 'nome_categoria' => 'Tecnologia',
                 'total_inscritos' => 45
             ],
@@ -215,103 +391,20 @@ class EventController {
                 'evento_gratuito' => false,
                 'preco' => 50.00,
                 'imagem_capa' => '',
-                'categoria_id' => 2,
+                'id_categoria' => 2,
                 'nome_categoria' => 'Negócios',
                 'total_inscritos' => 32
-            ],
-            [
-                'id_evento' => 3,
-                'titulo' => 'Curso: Marketing Digital Avançado',
-                'descricao' => 'Estratégias avançadas de marketing digital e growth hacking.',
-                'data_inicio' => date('Y-m-d', strtotime('+14 days')),
-                'horario_inicio' => '09:00:00',
-                'local_cidade' => 'Belo Horizonte',
-                'evento_gratuito' => true,
-                'preco' => 0,
-                'imagem_capa' => '',
-                'categoria_id' => 3,
-                'nome_categoria' => 'Marketing',
-                'total_inscritos' => 28
-            ],
-            [
-                'id_evento' => 4,
-                'titulo' => 'Meetup: Inteligência Artificial',
-                'descricao' => 'Discussões sobre o futuro da IA e suas aplicações práticas.',
-                'data_inicio' => date('Y-m-d', strtotime('+21 days')),
-                'horario_inicio' => '18:30:00',
-                'local_cidade' => 'Porto Alegre',
-                'evento_gratuito' => true,
-                'preco' => 0,
-                'imagem_capa' => '',
-                'categoria_id' => 1,
-                'nome_categoria' => 'Tecnologia',
-                'total_inscritos' => 67
-            ],
-            [
-                'id_evento' => 5,
-                'titulo' => 'Workshop: Design UX/UI',
-                'descricao' => 'Princípios fundamentais de design de experiência do usuário.',
-                'data_inicio' => date('Y-m-d', strtotime('+17 days')),
-                'horario_inicio' => '13:00:00',
-                'local_cidade' => 'Brasília',
-                'evento_gratuito' => false,
-                'preco' => 75.00,
-                'imagem_capa' => '',
-                'categoria_id' => 4,
-                'nome_categoria' => 'Design',
-                'total_inscritos' => 23
-            ],
-            [
-                'id_evento' => 6,
-                'titulo' => 'Conferência: Inovação e Sustentabilidade',
-                'descricao' => 'Como a tecnologia pode ajudar na criação de um futuro sustentável.',
-                'data_inicio' => date('Y-m-d', strtotime('+28 days')),
-                'horario_inicio' => '08:00:00',
-                'local_cidade' => 'Curitiba',
-                'evento_gratuito' => false,
-                'preco' => 120.00,
-                'imagem_capa' => '',
-                'categoria_id' => 5,
-                'nome_categoria' => 'Sustentabilidade',
-                'total_inscritos' => 89
             ]
         ];
 
         // Aplicar filtros se especificados
         if (!empty($params['categoria_id'])) {
             $eventos = array_filter($eventos, function($e) use ($params) {
-                return $e['categoria_id'] == $params['categoria_id'];
+                return $e['id_categoria'] == $params['categoria_id'];
             });
         }
 
-        if (!empty($params['busca'])) {
-            $eventos = array_filter($eventos, function($e) use ($params) {
-                return stripos($e['titulo'], $params['busca']) !== false || 
-                       stripos($e['descricao'], $params['busca']) !== false;
-            });
-        }
-
-        if (!empty($params['cidade'])) {
-            $eventos = array_filter($eventos, function($e) use ($params) {
-                return stripos($e['local_cidade'], $params['cidade']) !== false;
-            });
-        }
-
-        if (isset($params['gratuito'])) {
-            $eventos = array_filter($eventos, function($e) use ($params) {
-                return $e['evento_gratuito'] == $params['gratuito'];
-            });
-        }
-
-        // Ordenar
-        if (isset($params['ordem']) && $params['ordem'] === 'destaque') {
-            usort($eventos, function($a, $b) {
-                return $b['total_inscritos'] - $a['total_inscritos'];
-            });
-        }
-
-        // Limitar resultados
-        if (isset($params['limite'])) {
+        if (!empty($params['limite'])) {
             $eventos = array_slice($eventos, 0, $params['limite']);
         }
 
@@ -325,12 +418,8 @@ class EventController {
             ['id_categoria' => 2, 'nome' => 'Negócios'],
             ['id_categoria' => 3, 'nome' => 'Marketing'],
             ['id_categoria' => 4, 'nome' => 'Design'],
-            ['id_categoria' => 5, 'nome' => 'Sustentabilidade'],
-            ['id_categoria' => 6, 'nome' => 'Educação'],
-            ['id_categoria' => 7, 'nome' => 'Entretenimento'],
-            ['id_categoria' => 8, 'nome' => 'Saúde'],
-            ['id_categoria' => 9, 'nome' => 'Esportes'],
-            ['id_categoria' => 10, 'nome' => 'Arte & Cultura']
+            ['id_categoria' => 5, 'nome' => 'Sustentabilidade']
         ];
     }
 }
+?>
