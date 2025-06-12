@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// MEUS EVENTOS
+// MEUS EVENTOS - VERSÃO CORRIGIDA
 // Local: views/events/list.php
 // ==========================================
 
@@ -19,6 +19,7 @@ if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'organizador') 
 
 $title = "Meus Eventos - Conecta Eventos";
 $userName = $_SESSION['user_name'] ?? 'Organizador';
+$userId = $_SESSION['user_id'] ?? 0;
 
 // URLs
 $dashboardUrl = '../dashboard/organizer.php';
@@ -29,100 +30,39 @@ $createEventUrl = 'create.php';
 $status_filter = $_GET['status'] ?? '';
 $categoria_filter = $_GET['categoria'] ?? '';
 
-// Dados de exemplo dos eventos do organizador
-$meus_eventos = [
-    [
-        'id_evento' => 1,
-        'titulo' => 'Workshop de Desenvolvimento Web',
-        'categoria' => 'Tecnologia',
-        'data_inicio' => '2024-06-15',
-        'horario_inicio' => '14:00',
-        'local_cidade' => 'São Paulo',
-        'status' => 'publicado',
-        'participantes' => 45,
-        'max_participantes' => 100,
-        'evento_gratuito' => true,
-        'preco' => 0,
-        'created_at' => '2024-05-20'
-    ],
-    [
-        'id_evento' => 2,
-        'titulo' => 'Palestra sobre IA e Machine Learning',
-        'categoria' => 'Tecnologia',
-        'data_inicio' => '2024-06-20',
-        'horario_inicio' => '19:00',
-        'local_cidade' => 'Rio de Janeiro',
-        'status' => 'publicado',
-        'participantes' => 32,
-        'max_participantes' => 200,
-        'evento_gratuito' => false,
-        'preco' => 50.00,
-        'created_at' => '2024-05-22'
-    ],
-    [
-        'id_evento' => 3,
-        'titulo' => 'Meetup de Empreendedorismo Digital',
-        'categoria' => 'Negócios',
-        'data_inicio' => '2024-06-25',
-        'horario_inicio' => '18:30',
-        'local_cidade' => 'Belo Horizonte',
-        'status' => 'rascunho',
-        'participantes' => 0,
-        'max_participantes' => 50,
-        'evento_gratuito' => true,
-        'preco' => 0,
-        'created_at' => '2024-05-25'
-    ],
-    [
-        'id_evento' => 4,
-        'titulo' => 'Curso de Design UX/UI',
-        'categoria' => 'Design',
-        'data_inicio' => '2024-07-01',
-        'horario_inicio' => '09:00',
-        'local_cidade' => 'São Paulo',
-        'status' => 'publicado',
-        'participantes' => 28,
-        'max_participantes' => 80,
-        'evento_gratuito' => false,
-        'preco' => 150.00,
-        'created_at' => '2024-05-28'
-    ],
-    [
-        'id_evento' => 5,
-        'titulo' => 'Workshop de Marketing Digital',
-        'categoria' => 'Marketing',
-        'data_inicio' => '2024-07-10',
-        'horario_inicio' => '15:00',
-        'local_cidade' => 'Porto Alegre',
-        'status' => 'cancelado',
-        'participantes' => 12,
-        'max_participantes' => 60,
-        'evento_gratuito' => true,
-        'preco' => 0,
-        'created_at' => '2024-06-01'
-    ]
-];
+// Buscar eventos do organizador atual
+$meus_eventos = [];
+$error_message = '';
 
-// Aplicar filtros
-$eventos_filtrados = $meus_eventos;
-
-if (!empty($status_filter)) {
-    $eventos_filtrados = array_filter($eventos_filtrados, function($evento) use ($status_filter) {
-        return $evento['status'] === $status_filter;
-    });
-}
-
-if (!empty($categoria_filter)) {
-    $eventos_filtrados = array_filter($eventos_filtrados, function($evento) use ($categoria_filter) {
-        return $evento['categoria'] === $categoria_filter;
-    });
+try {
+    require_once '../../controllers/EventController.php';
+    $eventController = new EventController();
+    
+    $filters = [];
+    if (!empty($status_filter)) {
+        $filters['status'] = $status_filter;
+    }
+    if (!empty($categoria_filter)) {
+        $filters['categoria'] = $categoria_filter;
+    }
+    
+    $meus_eventos = $eventController->getEventsByOrganizer($userId, $filters);
+    
+    error_log("Eventos encontrados para usuário $userId: " . count($meus_eventos));
+    
+} catch (Exception $e) {
+    error_log("Erro ao carregar eventos: " . $e->getMessage());
+    $error_message = "Erro ao carregar eventos. Tente novamente.";
+    
+    // Dados de fallback apenas se houver erro
+    $meus_eventos = [];
 }
 
 // Estatísticas
 $total_eventos = count($meus_eventos);
 $eventos_publicados = count(array_filter($meus_eventos, function($e) { return $e['status'] === 'publicado'; }));
 $eventos_rascunho = count(array_filter($meus_eventos, function($e) { return $e['status'] === 'rascunho'; }));
-$total_participantes = array_sum(array_column($meus_eventos, 'participantes'));
+$total_participantes = array_sum(array_column($meus_eventos, 'total_inscritos'));
 ?>
 
 <!DOCTYPE html>
@@ -212,6 +152,12 @@ $total_participantes = array_sum(array_column($meus_eventos, 'participantes'));
         .progress-bar-custom {
             background: linear-gradient(135deg, #28a745, #20c997);
         }
+        
+        .empty-state {
+            text-align: center;
+            padding: 3rem 1rem;
+            color: #6c757d;
+        }
     </style>
 </head>
 <body>
@@ -265,6 +211,15 @@ $total_participantes = array_sum(array_column($meus_eventos, 'participantes'));
     </section>
 
     <div class="container pb-5">
+        <!-- Mensagem de Erro -->
+        <?php if ($error_message): ?>
+            <div class="alert alert-warning alert-dismissible fade show" role="alert">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                <?php echo htmlspecialchars($error_message); ?>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        <?php endif; ?>
+
         <!-- Estatísticas Rápidas -->
         <div class="row mb-4">
             <div class="col-md-3">
@@ -354,15 +309,15 @@ $total_participantes = array_sum(array_column($meus_eventos, 'participantes'));
                 <div class="col-md-4 text-md-end">
                     <span class="text-muted">
                         <i class="fas fa-list me-1"></i>
-                        <?php echo count($eventos_filtrados); ?> eventos encontrados
+                        <?php echo count($meus_eventos); ?> eventos encontrados
                     </span>
                 </div>
             </div>
         </div>
 
         <!-- Lista de Eventos -->
-        <?php if (empty($eventos_filtrados)): ?>
-            <div class="text-center py-5">
+        <?php if (empty($meus_eventos)): ?>
+            <div class="empty-state">
                 <i class="fas fa-calendar-times fa-4x text-muted mb-4"></i>
                 <h4>Nenhum evento encontrado</h4>
                 <p class="text-muted mb-4">
@@ -373,11 +328,12 @@ $total_participantes = array_sum(array_column($meus_eventos, 'participantes'));
                     <?php endif; ?>
                 </p>
                 <a href="<?php echo $createEventUrl; ?>" class="btn btn-primary btn-lg">
-                    <i class="fas fa-plus me-2"></i>Criar Primeiro Evento
+                    <i class="fas fa-plus me-2"></i>
+                    <?php echo empty($meus_eventos) && empty($status_filter) && empty($categoria_filter) ? 'Criar Primeiro Evento' : 'Novo Evento'; ?>
                 </a>
             </div>
         <?php else: ?>
-            <?php foreach ($eventos_filtrados as $evento): ?>
+            <?php foreach ($meus_eventos as $evento): ?>
                 <div class="event-card">
                     <div class="row align-items-center">
                         <div class="col-md-6">
@@ -385,7 +341,9 @@ $total_participantes = array_sum(array_column($meus_eventos, 'participantes'));
                                 <div class="flex-grow-1">
                                     <h5 class="mb-1"><?php echo htmlspecialchars($evento['titulo']); ?></h5>
                                     <div class="mb-2">
-                                        <span class="badge bg-primary me-2"><?php echo $evento['categoria']; ?></span>
+                                        <?php if (!empty($evento['nome_categoria'])): ?>
+                                            <span class="badge bg-primary me-2"><?php echo htmlspecialchars($evento['nome_categoria']); ?></span>
+                                        <?php endif; ?>
                                         <span class="status-badge status-<?php echo $evento['status']; ?>">
                                             <?php echo ucfirst($evento['status']); ?>
                                         </span>
@@ -393,13 +351,13 @@ $total_participantes = array_sum(array_column($meus_eventos, 'participantes'));
                                     <div class="text-muted">
                                         <small>
                                             <i class="fas fa-calendar me-1"></i>
-                                            <?php echo date('d/m/Y', strtotime($evento['data_inicio'])); ?> às 
-                                            <?php echo date('H:i', strtotime($evento['horario_inicio'])); ?>
+                                            <?php echo $evento['data_formatada'] ?? date('d/m/Y', strtotime($evento['data_inicio'])); ?> às 
+                                            <?php echo $evento['horario_formatado'] ?? date('H:i', strtotime($evento['horario_inicio'])); ?>
                                         </small>
                                         <br>
                                         <small>
                                             <i class="fas fa-map-marker-alt me-1"></i>
-                                            <?php echo $evento['local_cidade']; ?>
+                                            <?php echo htmlspecialchars($evento['local_cidade']); ?>
                                         </small>
                                     </div>
                                 </div>
@@ -409,20 +367,25 @@ $total_participantes = array_sum(array_column($meus_eventos, 'participantes'));
                         <div class="col-md-3">
                             <div class="text-center">
                                 <h6>Participantes</h6>
+                                <?php 
+                                $participantes = $evento['total_inscritos'];
+                                $capacidade = $evento['capacidade_maxima'] ?? 100;
+                                $percentual = $capacidade > 0 ? ($participantes / $capacidade) * 100 : 0;
+                                ?>
                                 <div class="progress mb-2">
                                     <div class="progress-bar progress-bar-custom" 
-                                         style="width: <?php echo ($evento['participantes'] / $evento['max_participantes']) * 100; ?>%">
+                                         style="width: <?php echo min($percentual, 100); ?>%">
                                     </div>
                                 </div>
                                 <small class="text-muted">
-                                    <?php echo $evento['participantes']; ?> / <?php echo $evento['max_participantes']; ?>
+                                    <?php echo $participantes; ?> / <?php echo $capacidade ?: '∞'; ?>
                                 </small>
                             </div>
                         </div>
                         
                         <div class="col-md-2 text-center">
                             <strong class="<?php echo $evento['evento_gratuito'] ? 'text-success' : 'text-primary'; ?>">
-                                <?php echo $evento['evento_gratuito'] ? 'Gratuito' : 'R$ ' . number_format($evento['preco'], 2, ',', '.'); ?>
+                                <?php echo $evento['preco_formatado'] ?? ($evento['evento_gratuito'] ? 'Gratuito' : 'R$ ' . number_format($evento['preco'], 2, ',', '.')); ?>
                             </strong>
                         </div>
                         
@@ -444,29 +407,29 @@ $total_participantes = array_sum(array_column($meus_eventos, 'participantes'));
                                         </a>
                                     </li>
                                     <li>
-                                        <a class="dropdown-item" href="participants.php?id=<?php echo $evento['id_evento']; ?>">
+                                        <a class="dropdown-item" href="subscribers.php?id=<?php echo $evento['id_evento']; ?>">
                                             <i class="fas fa-users me-2"></i>Participantes
                                         </a>
                                     </li>
                                     <li><hr class="dropdown-divider"></li>
                                     <?php if ($evento['status'] === 'rascunho'): ?>
                                         <li>
-                                            <a class="dropdown-item text-success" href="publish.php?id=<?php echo $evento['id_evento']; ?>">
+                                            <a class="dropdown-item text-success" href="#" onclick="publishEvent(<?php echo $evento['id_evento']; ?>)">
                                                 <i class="fas fa-check me-2"></i>Publicar
                                             </a>
                                         </li>
                                     <?php endif; ?>
                                     <?php if ($evento['status'] === 'publicado'): ?>
                                         <li>
-                                            <a class="dropdown-item text-warning" href="unpublish.php?id=<?php echo $evento['id_evento']; ?>">
+                                            <a class="dropdown-item text-warning" href="#" onclick="unpublishEvent(<?php echo $evento['id_evento']; ?>)">
                                                 <i class="fas fa-pause me-2"></i>Despublicar
                                             </a>
                                         </li>
                                     <?php endif; ?>
                                     <li>
                                         <a class="dropdown-item text-danger" 
-                                           href="delete.php?id=<?php echo $evento['id_evento']; ?>"
-                                           onclick="return confirm('Tem certeza que deseja excluir este evento?')">
+                                           href="#"
+                                           onclick="deleteEvent(<?php echo $evento['id_evento']; ?>, '<?php echo htmlspecialchars($evento['titulo']); ?>')">
                                             <i class="fas fa-trash me-2"></i>Excluir
                                         </a>
                                     </li>
@@ -486,7 +449,7 @@ $total_participantes = array_sum(array_column($meus_eventos, 'participantes'));
             // Animação das estatísticas
             const statNumbers = document.querySelectorAll('.stat-card h3');
             statNumbers.forEach(stat => {
-                const target = parseInt(stat.textContent);
+                const target = parseInt(stat.textContent) || 0;
                 let current = 0;
                 const increment = target / 30;
                 const timer = setInterval(() => {
@@ -510,7 +473,93 @@ $total_participantes = array_sum(array_column($meus_eventos, 'participantes'));
                     this.style.transform = 'translateY(0)';
                 });
             });
+
+            // Auto-hide alerts
+            const alerts = document.querySelectorAll('.alert');
+            alerts.forEach(alert => {
+                setTimeout(() => {
+                    const bsAlert = bootstrap.Alert.getOrCreateInstance(alert);
+                    if (bsAlert) {
+                        bsAlert.close();
+                    }
+                }, 5000);
+            });
         });
+
+        // Função para publicar evento
+        function publishEvent(eventId) {
+            if (confirm('Tem certeza que deseja publicar este evento?')) {
+                showToast('Funcionalidade em desenvolvimento', 'info');
+            }
+        }
+
+        // Função para despublicar evento
+        function unpublishEvent(eventId) {
+            if (confirm('Tem certeza que deseja despublicar este evento?')) {
+                showToast('Funcionalidade em desenvolvimento', 'info');
+            }
+        }
+
+        // Função para excluir evento
+        function deleteEvent(eventId, title) {
+            if (confirm(`Tem certeza que deseja excluir o evento "${title}"?\n\nEsta ação não pode ser desfeita.`)) {
+                showToast('Funcionalidade em desenvolvimento', 'warning');
+                // Aqui você implementaria a exclusão via API
+            }
+        }
+
+        // Sistema de toast notifications
+        function showToast(message, type = 'info') {
+            const toast = document.createElement('div');
+            toast.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show position-fixed`;
+            toast.style.cssText = `
+                top: 20px;
+                right: 20px;
+                z-index: 9999;
+                min-width: 300px;
+                max-width: 400px;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+                animation: slideInRight 0.3s ease-out;
+            `;
+            
+            const icons = {
+                success: 'fas fa-check-circle',
+                info: 'fas fa-info-circle',
+                warning: 'fas fa-exclamation-triangle',
+                danger: 'fas fa-exclamation-circle'
+            };
+            
+            toast.innerHTML = `
+                <i class="${icons[type] || icons.info} me-2"></i>
+                ${message}
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            `;
+
+            document.body.appendChild(toast);
+
+            setTimeout(() => {
+                if (toast.parentNode) {
+                    toast.remove();
+                }
+            }, 5000);
+        }
+
+        // CSS para animação
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideInRight {
+                from {
+                    transform: translateX(100%);
+                    opacity: 0;
+                }
+                to {
+                    transform: translateX(0);
+                    opacity: 1;
+                }
+            }
+        `;
+        document.head.appendChild(style);
     </script>
 </body>
 </html>
+?>

@@ -122,6 +122,74 @@ class EventController {
     }
 
     /**
+     * NOVA FUNÇÃO: Buscar eventos de um organizador específico
+     */
+    public function getEventsByOrganizer($userId, $params = []) {
+        if (!$this->conn) {
+            $this->log("Sem conexão - retornando eventos de exemplo");
+            return $this->getExampleOrganizerEvents($userId);
+        }
+
+        try {
+            $this->log("Buscando eventos do organizador ID: " . $userId);
+            
+            $query = "SELECT 
+                        e.*,
+                        c.nome as nome_categoria,
+                        u.nome as nome_organizador,
+                        COUNT(i.id_inscricao) as total_inscritos
+                     FROM eventos e
+                     LEFT JOIN categorias c ON e.id_categoria = c.id_categoria
+                     LEFT JOIN usuarios u ON e.id_organizador = u.id_usuario
+                     LEFT JOIN inscricoes i ON e.id_evento = i.id_evento AND i.status = 'confirmada'
+                     WHERE e.id_organizador = :user_id";
+
+            // Aplicar filtros
+            if (!empty($params['status'])) {
+                $query .= " AND e.status = :status";
+            }
+            
+            if (!empty($params['categoria'])) {
+                $query .= " AND c.nome = :categoria";
+            }
+
+            $query .= " GROUP BY e.id_evento";
+            $query .= " ORDER BY e.data_criacao DESC";
+
+            $stmt = $this->conn->prepare($query);
+            $stmt->bindParam(':user_id', $userId, PDO::PARAM_INT);
+
+            // Bind dos parâmetros de filtro
+            if (!empty($params['status'])) {
+                $stmt->bindParam(':status', $params['status']);
+            }
+            
+            if (!empty($params['categoria'])) {
+                $stmt->bindParam(':categoria', $params['categoria']);
+            }
+
+            $stmt->execute();
+            $eventos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+            
+            $this->log("Encontrados " . count($eventos) . " eventos do organizador " . $userId);
+            
+            // Adicionar dados formatados
+            foreach ($eventos as &$evento) {
+                $evento['data_formatada'] = date('d/m/Y', strtotime($evento['data_inicio']));
+                $evento['horario_formatado'] = date('H:i', strtotime($evento['horario_inicio']));
+                $evento['preco_formatado'] = $evento['evento_gratuito'] ? 'Gratuito' : 'R$ ' . number_format($evento['preco'], 2, ',', '.');
+                $evento['created_at'] = $evento['data_criacao'];
+            }
+            
+            return $eventos;
+
+        } catch (Exception $e) {
+            $this->log("Erro ao buscar eventos do organizador: " . $e->getMessage());
+            return $this->getExampleOrganizerEvents($userId);
+        }
+    }
+
+    /**
      * Buscar categorias
      */
     public function getCategories() {
@@ -319,64 +387,6 @@ class EventController {
     }
 
     /**
-     * Dados de exemplo para eventos
-     */
-    private function getExampleEvents($params = []) {
-        $eventos = [
-            [
-                'id_evento' => 1,
-                'titulo' => 'Workshop de Desenvolvimento Web',
-                'descricao' => 'Aprenda as últimas tecnologias em desenvolvimento web com especialistas da área.',
-                'data_inicio' => date('Y-m-d', strtotime('+7 days')),
-                'horario_inicio' => '14:00:00',
-                'local_cidade' => 'São Paulo',
-                'evento_gratuito' => 1,
-                'preco' => 0,
-                'imagem_capa' => '',
-                'id_categoria' => 1,
-                'nome_categoria' => 'Tecnologia',
-                'total_inscritos' => 45,
-                'nome_organizador' => 'Tech Academy'
-            ],
-            [
-                'id_evento' => 2,
-                'titulo' => 'Palestra: Empreendedorismo Digital',
-                'descricao' => 'Como criar e escalar um negócio digital no mercado atual.',
-                'data_inicio' => date('Y-m-d', strtotime('+10 days')),
-                'horario_inicio' => '19:00:00',
-                'local_cidade' => 'Rio de Janeiro',
-                'evento_gratuito' => 0,
-                'preco' => 50.00,
-                'imagem_capa' => '',
-                'id_categoria' => 2,
-                'nome_categoria' => 'Negócios',
-                'total_inscritos' => 32,
-                'nome_organizador' => 'Business Institute'
-            ]
-        ];
-
-        // Aplicar limite se especificado
-        if (isset($params['limite']) && $params['limite'] > 0) {
-            $eventos = array_slice($eventos, 0, $params['limite']);
-        }
-
-        return $eventos;
-    }
-
-    /**
-     * Categorias de exemplo
-     */
-    private function getExampleCategories() {
-        return [
-            ['id_categoria' => 1, 'nome' => 'Tecnologia'],
-            ['id_categoria' => 2, 'nome' => 'Negócios'],
-            ['id_categoria' => 3, 'nome' => 'Marketing'],
-            ['id_categoria' => 4, 'nome' => 'Design'],
-            ['id_categoria' => 5, 'nome' => 'Educação']
-        ];
-    }
-
-    /**
      * Verificar se usuário pode editar evento
      */
     public function canEdit($eventId) {
@@ -397,7 +407,10 @@ class EventController {
             $stmt->execute([$eventId]);
             $evento = $stmt->fetch();
 
-            return $evento && $evento['id_organizador'] == $_SESSION['user_id'];
+            $canEdit = $evento && $evento['id_organizador'] == $_SESSION['user_id'];
+            $this->log("CanEdit - Evento ID: $eventId, User ID: {$_SESSION['user_id']}, Organizador: " . ($evento['id_organizador'] ?? 'N/A') . ", Result: " . ($canEdit ? 'TRUE' : 'FALSE'));
+            
+            return $canEdit;
         } catch (Exception $e) {
             $this->log("Erro ao verificar permissão: " . $e->getMessage());
             return false;
@@ -505,6 +518,75 @@ class EventController {
                 'message' => 'Erro interno: ' . $e->getMessage()
             ];
         }
+    }
+
+    /**
+     * Dados de exemplo para eventos públicos
+     */
+    private function getExampleEvents($params = []) {
+        $eventos = [
+            [
+                'id_evento' => 1,
+                'titulo' => 'Workshop de Desenvolvimento Web',
+                'descricao' => 'Aprenda as últimas tecnologias em desenvolvimento web com especialistas da área.',
+                'data_inicio' => date('Y-m-d', strtotime('+7 days')),
+                'horario_inicio' => '14:00:00',
+                'local_cidade' => 'São Paulo',
+                'evento_gratuito' => 1,
+                'preco' => 0,
+                'imagem_capa' => '',
+                'id_categoria' => 1,
+                'nome_categoria' => 'Tecnologia',
+                'total_inscritos' => 45,
+                'nome_organizador' => 'Tech Academy',
+                'status' => 'publicado'
+            ],
+            [
+                'id_evento' => 2,
+                'titulo' => 'Palestra: Empreendedorismo Digital',
+                'descricao' => 'Como criar e escalar um negócio digital no mercado atual.',
+                'data_inicio' => date('Y-m-d', strtotime('+10 days')),
+                'horario_inicio' => '19:00:00',
+                'local_cidade' => 'Rio de Janeiro',
+                'evento_gratuito' => 0,
+                'preco' => 50.00,
+                'imagem_capa' => '',
+                'id_categoria' => 2,
+                'nome_categoria' => 'Negócios',
+                'total_inscritos' => 32,
+                'nome_organizador' => 'Business Institute',
+                'status' => 'publicado'
+            ]
+        ];
+
+        // Aplicar limite se especificado
+        if (isset($params['limite']) && $params['limite'] > 0) {
+            $eventos = array_slice($eventos, 0, $params['limite']);
+        }
+
+        return $eventos;
+    }
+
+    /**
+     * NOVA FUNÇÃO: Dados de exemplo para eventos do organizador
+     */
+    private function getExampleOrganizerEvents($userId) {
+        // Retornar array vazio se for modo de exemplo
+        // Isso força a exibição de "nenhum evento criado" na dashboard
+        return [];
+    }
+
+    /**
+     * Categorias de exemplo
+     */
+    private function getExampleCategories() {
+        return [
+            ['id_categoria' => 1, 'nome' => 'Tecnologia'],
+            ['id_categoria' => 2, 'nome' => 'Negócios'],
+            ['id_categoria' => 3, 'nome' => 'Marketing'],
+            ['id_categoria' => 4, 'nome' => 'Design'],
+            ['id_categoria' => 5, 'nome' => 'Educação']
+        ];
     }
 
     /**
