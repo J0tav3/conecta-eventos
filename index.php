@@ -1,7 +1,7 @@
 <?php
 // ========================================
-// CONECTA EVENTOS - PÁGINA INICIAL
-// Versão REAL com banco de dados Railway
+// CONECTA EVENTOS - PÁGINA INICIAL CORRIGIDA
+// Versão com correção para exibição de eventos
 // ========================================
 
 error_reporting(E_ALL);
@@ -48,43 +48,69 @@ if ($dependencies_loaded) {
             $eventController = new EventController();
             
             // Testar conexão básica
-            $test_query = "SELECT 1 as test";
             $db = Database::getInstance();
             $conn = $db->getConnection();
             
             if ($conn) {
-                $stmt = $conn->prepare($test_query);
-                if ($stmt && $stmt->execute()) {
-                    $database_connected = true;
-                    error_log("Conexão com banco confirmada!");
+                $database_connected = true;
+                error_log("Conexão com banco confirmada!");
+                
+                // CORREÇÃO: Buscar TODOS os eventos (não apenas publicados)
+                // Modificar query para incluir rascunhos também para teste
+                try {
+                    $query = "SELECT 
+                                e.*,
+                                c.nome as nome_categoria,
+                                u.nome as nome_organizador,
+                                COUNT(i.id_inscricao) as total_inscritos
+                             FROM eventos e
+                             LEFT JOIN categorias c ON e.id_categoria = c.id_categoria
+                             LEFT JOIN usuarios u ON e.id_organizador = u.id_usuario
+                             LEFT JOIN inscricoes i ON e.id_evento = i.id_evento AND i.status = 'confirmada'
+                             WHERE e.status IN ('publicado', 'rascunho')
+                             GROUP BY e.id_evento
+                             ORDER BY e.data_criacao DESC
+                             LIMIT 50";
                     
-                    // Carregar eventos reais
+                    $stmt = $conn->prepare($query);
+                    $stmt->execute();
+                    $eventos = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    
+                    error_log("Eventos encontrados diretamente: " . count($eventos));
+                    
+                    // Log dos eventos para debug
+                    foreach ($eventos as $evento) {
+                        error_log("Evento: " . $evento['titulo'] . " - Status: " . $evento['status']);
+                    }
+                    
+                } catch (Exception $e) {
+                    error_log("Erro na query customizada: " . $e->getMessage());
+                    // Fallback para o método original
                     $eventos = $eventController->getPublicEvents(['limite' => 50]);
-                    error_log("Eventos carregados: " . count($eventos));
-                    
-                    // Carregar categorias reais
-                    $categorias = $eventController->getCategories();
-                    error_log("Categorias carregadas: " . count($categorias));
-                    
-                    // Verificar sessão do usuário
-                    if (function_exists('isLoggedIn') && function_exists('getUserName')) {
-                        $isUserLoggedIn = isLoggedIn();
-                        $userName = getUserName() ?: '';
-                    }
-                    
-                    // Buscar cidades dos eventos
-                    try {
-                        $cities_query = "SELECT DISTINCT local_cidade FROM eventos WHERE status = 'publicado' AND local_cidade IS NOT NULL AND local_cidade != '' ORDER BY local_cidade";
-                        $stmt = $conn->prepare($cities_query);
-                        $stmt->execute();
-                        $cidades_db = $stmt->fetchAll(PDO::FETCH_ASSOC);
-                        $cidades = $cidades_db ?: [];
-                        error_log("Cidades carregadas: " . count($cidades));
-                    } catch (Exception $e) {
-                        error_log("Erro ao carregar cidades: " . $e->getMessage());
-                    }
-                } else {
-                    error_log("Falha no teste de query");
+                }
+                
+                // Carregar categorias reais
+                $categorias = $eventController->getCategories();
+                error_log("Categorias carregadas: " . count($categorias));
+                
+                // Verificar sessão do usuário
+                if (session_status() == PHP_SESSION_NONE) {
+                    session_start();
+                }
+                
+                $isUserLoggedIn = isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;
+                $userName = $_SESSION['user_name'] ?? '';
+                
+                // Buscar cidades dos eventos
+                try {
+                    $cities_query = "SELECT DISTINCT local_cidade FROM eventos WHERE local_cidade IS NOT NULL AND local_cidade != '' ORDER BY local_cidade";
+                    $stmt = $conn->prepare($cities_query);
+                    $stmt->execute();
+                    $cidades_db = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                    $cidades = $cidades_db ?: [];
+                    error_log("Cidades carregadas: " . count($cidades));
+                } catch (Exception $e) {
+                    error_log("Erro ao carregar cidades: " . $e->getMessage());
                 }
             } else {
                 error_log("Conexão PDO é null");
@@ -99,9 +125,9 @@ if ($dependencies_loaded) {
     }
 }
 
-// Dados de fallback se não conseguir conectar
+// Dados de fallback se não conseguir conectar OU se não houver eventos
 if (empty($eventos)) {
-    error_log("Usando eventos de fallback");
+    error_log("Usando eventos de fallback - Eventos encontrados: " . count($eventos));
     $eventos = [
         [
             'id_evento' => 1,
@@ -116,7 +142,8 @@ if (empty($eventos)) {
             'id_categoria' => 1,
             'nome_categoria' => 'Tecnologia',
             'total_inscritos' => 45,
-            'nome_organizador' => 'Tech Academy'
+            'nome_organizador' => 'Tech Academy',
+            'status' => 'publicado'
         ],
         [
             'id_evento' => 2,
@@ -131,7 +158,8 @@ if (empty($eventos)) {
             'id_categoria' => 2,
             'nome_categoria' => 'Negócios',
             'total_inscritos' => 32,
-            'nome_organizador' => 'Business Institute'
+            'nome_organizador' => 'Business Institute',
+            'status' => 'publicado'
         ]
     ];
 }
@@ -184,6 +212,11 @@ if (!empty($cityFilter)) {
 }
 
 $siteUrl = 'https://conecta-eventos-production.up.railway.app';
+
+// Debug final
+error_log("FINAL - Total eventos: " . count($eventos));
+error_log("FINAL - Eventos filtrados: " . count($eventos_filtrados));
+error_log("FINAL - Database connected: " . ($database_connected ? 'true' : 'false'));
 ?>
 
 <!DOCTYPE html>
@@ -355,6 +388,41 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
             transform: translateY(-1px);
             box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
         }
+
+        /* Badge de status do evento */
+        .status-badge {
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            padding: 0.25rem 0.75rem;
+            border-radius: 1rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .status-rascunho {
+            background: rgba(255, 193, 7, 0.9);
+            color: #856404;
+        }
+        
+        .status-publicado {
+            background: rgba(40, 167, 69, 0.9);
+            color: white;
+        }
+
+        /* Debug info */
+        .debug-info {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: rgba(0, 0, 0, 0.8);
+            color: white;
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            z-index: 1000;
+        }
     </style>
 </head>
 <body>
@@ -377,6 +445,7 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
                             <i class="fas fa-user-circle me-1"></i>
                             Olá, <?php echo htmlspecialchars($userName); ?>!
                         </span>
+                        <a class="nav-link" href="views/dashboard/organizer.php">Dashboard</a>
                         <a class="nav-link" href="logout.php">
                             <i class="fas fa-sign-out-alt me-1"></i>Sair
                         </a>
@@ -400,8 +469,11 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
                 <div class="d-flex align-items-center">
                     <i class="fas fa-check-circle fa-lg me-3"></i>
                     <div class="flex-grow-1">
-                        <strong>Sistema Online:</strong> Conectado ao banco de dados Railway. Todos os recursos disponíveis.
-                        <small class="d-block">Eventos: <?php echo count($eventos); ?> | Categorias: <?php echo count($categorias); ?></small>
+                        <strong>Sistema Online:</strong> Conectado ao banco Railway. 
+                        Eventos: <?php echo count($eventos); ?> | Categorias: <?php echo count($categorias); ?>
+                        <?php if (!empty($eventos)): ?>
+                            | <strong>Mostrando eventos reais!</strong>
+                        <?php endif; ?>
                     </div>
                     <button type="button" class="btn-close btn-close-white" data-bs-dismiss="alert"></button>
                 </div>
@@ -413,11 +485,11 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
                 <div class="d-flex align-items-center">
                     <i class="fas fa-exclamation-triangle fa-lg me-3"></i>
                     <div class="flex-grow-1">
-                        <strong>Modo Limitado:</strong> 
+                        <strong>Modo Demo:</strong> 
                         <?php if ($connection_error): ?>
-                            Erro de conexão: <?php echo htmlspecialchars($connection_error); ?>
+                            Erro: <?php echo htmlspecialchars($connection_error); ?>
                         <?php else: ?>
-                            Usando dados de exemplo. Verifique a configuração do banco.
+                            Usando dados de exemplo.
                         <?php endif; ?>
                     </div>
                     <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
@@ -486,64 +558,6 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
         </div>
     </section>
 
-    <!-- Filtros Avançados -->
-    <?php if (!empty($searchTerm) || !empty($categoryFilter) || !empty($cityFilter)): ?>
-        <div class="container">
-            <div class="filters-section">
-                <div class="d-flex justify-content-between align-items-center mb-3">
-                    <h5 class="mb-0">
-                        <i class="fas fa-filter me-2"></i>Filtros Aplicados
-                    </h5>
-                    <a href="index.php" class="btn btn-outline-secondary btn-sm">
-                        <i class="fas fa-times me-2"></i>Limpar Filtros
-                    </a>
-                </div>
-                
-                <form method="GET" class="row g-3">
-                    <div class="col-md-4">
-                        <label class="form-label">Cidade</label>
-                        <select class="form-select" name="cidade">
-                            <option value="">Todas as cidades</option>
-                            <?php foreach ($cidades as $cidade): ?>
-                                <option value="<?php echo htmlspecialchars($cidade['local_cidade']); ?>"
-                                        <?php echo $cityFilter === $cidade['local_cidade'] ? 'selected' : ''; ?>>
-                                    <?php echo htmlspecialchars($cidade['local_cidade']); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    
-                    <div class="col-md-4">
-                        <label class="form-label">Categoria</label>
-                        <select class="form-select" name="categoria">
-                            <option value="">Todas as categorias</option>
-                            <?php foreach ($categorias as $categoria): ?>
-                                <option value="<?php echo (int)$categoria['id_categoria']; ?>"
-                                        <?php echo $categoryFilter == $categoria['id_categoria'] ? 'selected' : ''; ?>>
-                                    <?php echo htmlspecialchars($categoria['nome']); ?>
-                                </option>
-                            <?php endforeach; ?>
-                        </select>
-                    </div>
-                    
-                    <div class="col-md-4">
-                        <label class="form-label">Buscar</label>
-                        <div class="input-group">
-                            <input type="text" 
-                                   class="form-control" 
-                                   name="busca" 
-                                   placeholder="Título ou descrição..."
-                                   value="<?php echo htmlspecialchars($searchTerm); ?>">
-                            <button type="submit" class="btn btn-primary">
-                                <i class="fas fa-filter"></i>
-                            </button>
-                        </div>
-                    </div>
-                </form>
-            </div>
-        </div>
-    <?php endif; ?>
-
     <!-- Eventos -->
     <div class="container">
         <section class="mb-5">
@@ -570,7 +584,10 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
                             Tente ajustar os filtros ou buscar por outros termos.
                         <?php else: ?>
                             <?php if ($database_connected): ?>
-                                Ainda não há eventos cadastrados. Volte em breve!
+                                Ainda não há eventos cadastrados. 
+                                <?php if ($isUserLoggedIn): ?>
+                                    <a href="views/events/create.php">Crie o primeiro evento!</a>
+                                <?php endif; ?>
                             <?php else: ?>
                                 Problemas de conexão com o banco de dados.
                             <?php endif; ?>
@@ -587,6 +604,12 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
                     <?php foreach ($eventos_filtrados as $evento): ?>
                         <div class="col-lg-4 col-md-6 mb-4">
                             <div class="card event-card">
+                                <!-- Badge de Status -->
+                                <div class="status-badge status-<?php echo $evento['status'] ?? 'publicado'; ?>">
+                                    <?php echo ucfirst($evento['status'] ?? 'publicado'); ?>
+                                </div>
+                                
+                                <!-- Badge de Preço -->
                                 <div class="price-badge <?php echo $evento['evento_gratuito'] ? '' : 'paid'; ?>">
                                     <?php if ($evento['evento_gratuito']): ?>
                                         Gratuito
@@ -634,6 +657,11 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
                                             <i class="fas fa-users ms-3 me-1"></i>
                                             <?php echo (int)($evento['total_inscritos'] ?? 0); ?> inscritos
                                         </small>
+                                        <br>
+                                        <small class="text-muted">
+                                            <i class="fas fa-user me-1"></i>
+                                            <?php echo htmlspecialchars($evento['nome_organizador'] ?? 'Organizador'); ?>
+                                        </small>
                                     </div>
                                     
                                     <div class="d-grid">
@@ -649,230 +677,51 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
                 </div>
             <?php endif; ?>
         </section>
-
-        <!-- Estatísticas -->
-        <section class="stats-section">
-            <div class="container">
-                <div class="row">
-                    <div class="col-6 col-md-3">
-                        <div class="stat-item">
-                            <div class="stat-number"><?php echo count($eventos); ?></div>
-                            <div class="stat-label">Eventos Disponíveis</div>
-                        </div>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <div class="stat-item">
-                            <div class="stat-number"><?php echo count($categorias); ?></div>
-                            <div class="stat-label">Categorias</div>
-                        </div>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <div class="stat-item">
-                            <div class="stat-number"><?php echo count($cidades); ?></div>
-                            <div class="stat-label">Cidades</div>
-                        </div>
-                    </div>
-                    <div class="col-6 col-md-3">
-                        <div class="stat-item">
-                            <div class="stat-number"><?php echo array_sum(array_column($eventos, 'total_inscritos')); ?></div>
-                            <div class="stat-label">Total Participantes</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-
-        <!-- Seção de CTA -->
-        <?php if (!$isUserLoggedIn): ?>
-        <section class="mb-5">
-            <div class="row">
-                <div class="col-lg-6 mb-4">
-                    <div class="card h-100 border-0 shadow">
-                        <div class="card-body text-center p-4">
-                            <div class="mb-3">
-                                <i class="fas fa-users fa-3x text-primary"></i>
-                            </div>
-                            <h4>Para Participantes</h4>
-                            <p class="text-muted">Descubra eventos incríveis, conecte-se com pessoas interessantes e aprenda coisas novas.</p>
-                            <ul class="list-unstyled text-start">
-                                <li><i class="fas fa-check text-success me-2"></i>Inscrição em eventos gratuitos e pagos</li>
-                                <li><i class="fas fa-check text-success me-2"></i>Networking com outros participantes</li>
-                                <li><i class="fas fa-check text-success me-2"></i>Certificados de participação</li>
-                                <li><i class="fas fa-check text-success me-2"></i>Sistema de favoritos</li>
-                            </ul>
-                            <a href="views/auth/register.php?tipo=participante" class="btn btn-primary">
-                                <i class="fas fa-user-plus me-2"></i>Cadastrar como Participante
-                            </a>
-                        </div>
-                    </div>
-                </div>
-                
-                <div class="col-lg-6 mb-4">
-                    <div class="card h-100 border-0 shadow">
-                        <div class="card-body text-center p-4">
-                            <div class="mb-3">
-                                <i class="fas fa-calendar-plus fa-3x text-success"></i>
-                            </div>
-                            <h4>Para Organizadores</h4>
-                            <p class="text-muted">Crie e gerencie seus eventos, alcance seu público-alvo e construa uma comunidade.</p>
-                            <ul class="list-unstyled text-start">
-                                <li><i class="fas fa-check text-success me-2"></i>Criação ilimitada de eventos</li>
-                                <li><i class="fas fa-check text-success me-2"></i>Gestão completa de participantes</li>
-                                <li><i class="fas fa-check text-success me-2"></i>Relatórios e analytics</li>
-                                <li><i class="fas fa-check text-success me-2"></i>Sistema de pagamentos</li>
-                            </ul>
-                            <a href="views/auth/register.php?tipo=organizador" class="btn btn-success">
-                                <i class="fas fa-plus me-2"></i>Cadastrar como Organizador
-                            </a>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </section>
-        <?php endif; ?>
-
-        <!-- Categorias em Destaque -->
-        <section class="mb-5">
-            <h2 class="text-center mb-5">
-                <i class="fas fa-tags me-2"></i>Explore por Categoria
-            </h2>
-            <div class="row">
-                <?php 
-                $categoria_icons = [
-                    'Tecnologia' => 'fas fa-laptop-code',
-                    'Negócios' => 'fas fa-briefcase',
-                    'Marketing' => 'fas fa-bullhorn',
-                    'Design' => 'fas fa-palette',
-                    'Educação' => 'fas fa-graduation-cap',
-                    'Saúde' => 'fas fa-heartbeat',
-                    'Arte' => 'fas fa-paint-brush',
-                    'Esporte' => 'fas fa-running',
-                    'Música' => 'fas fa-music',
-                    'Culinária' => 'fas fa-utensils'
-                ];
-                
-                foreach ($categorias as $index => $categoria): 
-                    if ($index >= 6) break; // Mostrar apenas 6 categorias
-                    $icon = $categoria_icons[$categoria['nome']] ?? 'fas fa-calendar';
-                ?>
-                    <div class="col-lg-2 col-md-4 col-sm-6 mb-3">
-                        <a href="?categoria=<?php echo $categoria['id_categoria']; ?>" 
-                           class="text-decoration-none">
-                            <div class="card text-center h-100 border-0 shadow-sm categoria-card">
-                                <div class="card-body py-4">
-                                    <i class="<?php echo $icon; ?> fa-2x text-primary mb-3"></i>
-                                    <h6 class="card-title"><?php echo htmlspecialchars($categoria['nome']); ?></h6>
-                                    <small class="text-muted">
-                                        <?php 
-                                        $eventos_categoria = array_filter($eventos, function($e) use ($categoria) {
-                                            return $e['id_categoria'] == $categoria['id_categoria'];
-                                        });
-                                        echo count($eventos_categoria);
-                                        ?> eventos
-                                    </small>
-                                </div>
-                            </div>
-                        </a>
-                    </div>
-                <?php endforeach; ?>
-            </div>
-        </section>
-
-        <!-- Próximos Eventos em Destaque -->
-        <?php 
-        $eventos_destaque = array_slice($eventos, 0, 3);
-        if (!empty($eventos_destaque)): 
-        ?>
-        <section class="mb-5">
-            <h2 class="text-center mb-5">
-                <i class="fas fa-star me-2"></i>Próximos Eventos em Destaque
-            </h2>
-            <div class="row">
-                <?php foreach ($eventos_destaque as $evento): ?>
-                    <div class="col-lg-4 mb-4">
-                        <div class="card event-card-destaque h-100 border-0">
-                            <div class="card-body p-4">
-                                <div class="d-flex justify-content-between align-items-start mb-3">
-                                    <span class="badge bg-primary"><?php echo htmlspecialchars($evento['nome_categoria'] ?? 'Evento'); ?></span>
-                                    <span class="badge <?php echo $evento['evento_gratuito'] ? 'bg-success' : 'bg-warning'; ?>">
-                                        <?php echo $evento['evento_gratuito'] ? 'Gratuito' : 'R$ ' . number_format($evento['preco'], 2, ',', '.'); ?>
-                                    </span>
-                                </div>
-                                
-                                <h5 class="card-title"><?php echo htmlspecialchars($evento['titulo']); ?></h5>
-                                <p class="card-text text-muted">
-                                    <?php echo substr(htmlspecialchars($evento['descricao']), 0, 100); ?>...
-                                </p>
-                                
-                                <div class="mb-3">
-                                    <div class="d-flex align-items-center mb-2">
-                                        <i class="fas fa-calendar text-primary me-2"></i>
-                                        <small><?php echo date('d/m/Y', strtotime($evento['data_inicio'])); ?></small>
-                                        <i class="fas fa-clock text-primary ms-3 me-2"></i>
-                                        <small><?php echo date('H:i', strtotime($evento['horario_inicio'])); ?></small>
-                                    </div>
-                                    <div class="d-flex align-items-center">
-                                        <i class="fas fa-map-marker-alt text-primary me-2"></i>
-                                        <small><?php echo htmlspecialchars($evento['local_cidade']); ?></small>
-                                        <i class="fas fa-users text-primary ms-3 me-2"></i>
-                                        <small><?php echo $evento['total_inscritos']; ?> inscritos</small>
-                                    </div>
-                                </div>
-                                
-                                <div class="d-grid">
-                                    <a href="views/events/view.php?id=<?php echo $evento['id_evento']; ?>" 
-                                       class="btn btn-outline-primary">
-                                        Ver Detalhes
-                                    </a>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                <?php endforeach; ?>
-            </div>
-            
-            <div class="text-center">
-                <a href="?todos=1" class="btn btn-primary btn-lg">
-                    <i class="fas fa-calendar-alt me-2"></i>Ver Todos os Eventos
-                </a>
-            </div>
-        </section>
-        <?php endif; ?>
-
-        <!-- Newsletter -->
-        <section class="mb-5">
-            <div class="card border-0 shadow" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-                <div class="card-body text-center text-white py-5">
-                    <h3 class="mb-3">
-                        <i class="fas fa-envelope me-2"></i>Fique por dentro dos melhores eventos
-                    </h3>
-                    <p class="lead mb-4">
-                        Receba notificações sobre novos eventos na sua cidade e área de interesse.
-                    </p>
-                    
-                    <?php if (!$isUserLoggedIn): ?>
-                        <div class="row justify-content-center">
-                            <div class="col-md-6">
-                                <form class="d-flex gap-2">
-                                    <input type="email" class="form-control" placeholder="Seu melhor e-mail" required>
-                                    <button type="submit" class="btn btn-light">
-                                        <i class="fas fa-bell me-1"></i>Notificar
-                                    </button>
-                                </form>
-                                <small class="text-white-50 mt-2 d-block">
-                                    Sem spam. Cancele quando quiser.
-                                </small>
-                            </div>
-                        </div>
-                    <?php else: ?>
-                        <a href="views/dashboard/settings.php" class="btn btn-light btn-lg">
-                            <i class="fas fa-cog me-2"></i>Configurar Notificações
-                        </a>
-                    <?php endif; ?>
-                </div>
-            </div>
-        </section>
     </div>
+
+    <!-- Debug Info (só aparece se estiver em desenvolvimento) -->
+    <?php if ($database_connected): ?>
+        <div class="debug-info" style="display: none;" id="debugInfo">
+            <strong>Debug Info:</strong><br>
+            DB: <?php echo $database_connected ? 'OK' : 'ERRO'; ?><br>
+            Eventos DB: <?php echo count($eventos); ?><br>
+            Filtrados: <?php echo count($eventos_filtrados); ?><br>
+            User: <?php echo $isUserLoggedIn ? 'Logado' : 'Visitante'; ?><br>
+            <button onclick="this.parentElement.style.display='none'" class="btn btn-sm btn-secondary mt-1">Fechar</button>
+        </div>
+    <?php endif; ?>
+
+    <!-- Estatísticas -->
+    <section class="stats-section">
+        <div class="container">
+            <div class="row">
+                <div class="col-6 col-md-3">
+                    <div class="stat-item">
+                        <div class="stat-number"><?php echo count($eventos); ?></div>
+                        <div class="stat-label">Eventos Disponíveis</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="stat-item">
+                        <div class="stat-number"><?php echo count($categorias); ?></div>
+                        <div class="stat-label">Categorias</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="stat-item">
+                        <div class="stat-number"><?php echo count($cidades); ?></div>
+                        <div class="stat-label">Cidades</div>
+                    </div>
+                </div>
+                <div class="col-6 col-md-3">
+                    <div class="stat-item">
+                        <div class="stat-number"><?php echo array_sum(array_column($eventos, 'total_inscritos')); ?></div>
+                        <div class="stat-label">Total Participantes</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
 
     <!-- Footer -->
     <footer class="bg-dark text-white py-5 mt-5">
@@ -887,60 +736,34 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
                         Conectando pessoas através de experiências incríveis. 
                         A melhor plataforma para descobrir e organizar eventos.
                     </p>
-                    <div class="d-flex gap-3">
-                        <a href="#" class="text-white-50 fs-4">
-                            <i class="fab fa-facebook"></i>
-                        </a>
-                        <a href="#" class="text-white-50 fs-4">
-                            <i class="fab fa-instagram"></i>
-                        </a>
-                        <a href="#" class="text-white-50 fs-4">
-                            <i class="fab fa-twitter"></i>
-                        </a>
-                        <a href="#" class="text-white-50 fs-4">
-                            <i class="fab fa-linkedin"></i>
-                        </a>
+                </div>
+                
+                <div class="col-lg-8">
+                    <div class="row">
+                        <div class="col-md-4 mb-4">
+                            <h6>Para Organizadores</h6>
+                            <ul class="list-unstyled">
+                                <li><a href="views/auth/register.php?tipo=organizador" class="text-white-50 text-decoration-none">Criar Conta</a></li>
+                                <li><a href="views/events/create.php" class="text-white-50 text-decoration-none">Criar Evento</a></li>
+                            </ul>
+                        </div>
+                        
+                        <div class="col-md-4 mb-4">
+                            <h6>Para Participantes</h6>
+                            <ul class="list-unstyled">
+                                <li><a href="views/auth/register.php?tipo=participante" class="text-white-50 text-decoration-none">Criar Conta</a></li>
+                                <li><a href="#" class="text-white-50 text-decoration-none">Explorar Eventos</a></li>
+                            </ul>
+                        </div>
+                        
+                        <div class="col-md-4 mb-4">
+                            <h6>Sistema</h6>
+                            <ul class="list-unstyled">
+                                <li><span class="text-white-50">Status: <?php echo $database_connected ? 'Online' : 'Limitado'; ?></span></li>
+                                <li><span class="text-white-50">Eventos: <?php echo count($eventos); ?></span></li>
+                            </ul>
+                        </div>
                     </div>
-                </div>
-                
-                <div class="col-lg-2 col-md-6 mb-4">
-                    <h6>Eventos</h6>
-                    <ul class="list-unstyled">
-                        <li><a href="?categoria=1" class="text-white-50 text-decoration-none">Tecnologia</a></li>
-                        <li><a href="?categoria=2" class="text-white-50 text-decoration-none">Negócios</a></li>
-                        <li><a href="?categoria=3" class="text-white-50 text-decoration-none">Marketing</a></li>
-                        <li><a href="?categoria=4" class="text-white-50 text-decoration-none">Design</a></li>
-                    </ul>
-                </div>
-                
-                <div class="col-lg-2 col-md-6 mb-4">
-                    <h6>Para Organizadores</h6>
-                    <ul class="list-unstyled">
-                        <li><a href="views/auth/register.php?tipo=organizador" class="text-white-50 text-decoration-none">Criar Conta</a></li>
-                        <li><a href="views/events/create.php" class="text-white-50 text-decoration-none">Criar Evento</a></li>
-                        <li><a href="#" class="text-white-50 text-decoration-none">Preços</a></li>
-                        <li><a href="#" class="text-white-50 text-decoration-none">Recursos</a></li>
-                    </ul>
-                </div>
-                
-                <div class="col-lg-2 col-md-6 mb-4">
-                    <h6>Suporte</h6>
-                    <ul class="list-unstyled">
-                        <li><a href="#" class="text-white-50 text-decoration-none">Central de Ajuda</a></li>
-                        <li><a href="#" class="text-white-50 text-decoration-none">Contato</a></li>
-                        <li><a href="#" class="text-white-50 text-decoration-none">FAQ</a></li>
-                        <li><a href="#" class="text-white-50 text-decoration-none">Termos de Uso</a></li>
-                    </ul>
-                </div>
-                
-                <div class="col-lg-2 col-md-6 mb-4">
-                    <h6>Empresa</h6>
-                    <ul class="list-unstyled">
-                        <li><a href="#" class="text-white-50 text-decoration-none">Sobre Nós</a></li>
-                        <li><a href="#" class="text-white-50 text-decoration-none">Carreira</a></li>
-                        <li><a href="#" class="text-white-50 text-decoration-none">Imprensa</a></li>
-                        <li><a href="#" class="text-white-50 text-decoration-none">Blog</a></li>
-                    </ul>
                 </div>
             </div>
             
@@ -966,32 +789,6 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
     
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Animação das estatísticas
-            const statNumbers = document.querySelectorAll('.stat-number');
-            const observer = new IntersectionObserver((entries) => {
-                entries.forEach(entry => {
-                    if (entry.isIntersecting) {
-                        const target = parseInt(entry.target.textContent);
-                        let current = 0;
-                        const increment = target / 30;
-                        
-                        const timer = setInterval(() => {
-                            current += increment;
-                            if (current >= target) {
-                                entry.target.textContent = target;
-                                clearInterval(timer);
-                            } else {
-                                entry.target.textContent = Math.floor(current);
-                            }
-                        }, 50);
-                        
-                        observer.unobserve(entry.target);
-                    }
-                });
-            });
-            
-            statNumbers.forEach(stat => observer.observe(stat));
-
             // Auto-hide alerts
             const alerts = document.querySelectorAll('.alert');
             alerts.forEach(alert => {
@@ -1003,17 +800,15 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
                 }, 8000);
             });
 
-            // Hover effects para cards de categoria
-            const categoriaCards = document.querySelectorAll('.categoria-card');
-            categoriaCards.forEach(card => {
-                card.addEventListener('mouseenter', function() {
-                    this.style.transform = 'translateY(-5px)';
-                    this.style.boxShadow = '0 8px 25px rgba(0,0,0,0.15)';
-                });
-                card.addEventListener('mouseleave', function() {
-                    this.style.transform = 'translateY(0)';
-                    this.style.boxShadow = '';
-                });
+            // Mostrar debug info com Ctrl+D
+            document.addEventListener('keydown', function(e) {
+                if (e.ctrlKey && e.key === 'd') {
+                    e.preventDefault();
+                    const debugInfo = document.getElementById('debugInfo');
+                    if (debugInfo) {
+                        debugInfo.style.display = debugInfo.style.display === 'none' ? 'block' : 'none';
+                    }
+                }
             });
 
             // Loading states para formulários
@@ -1024,180 +819,29 @@ $siteUrl = 'https://conecta-eventos-production.up.railway.app';
                     if (submitBtn) {
                         const originalText = submitBtn.innerHTML;
                         submitBtn.disabled = true;
-                        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Carregando...';
+                        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Buscando...';
                         
-                        // Re-enable após 5 segundos se ainda estiver na página
+                        // Re-enable após 3 segundos se ainda estiver na página
                         setTimeout(() => {
                             submitBtn.disabled = false;
                             submitBtn.innerHTML = originalText;
-                        }, 5000);
+                        }, 3000);
                     }
                 });
             });
 
-            // Smooth scroll para links internos
-            document.querySelectorAll('a[href^="#"]').forEach(anchor => {
-                anchor.addEventListener('click', function (e) {
-                    e.preventDefault();
-                    const target = document.querySelector(this.getAttribute('href'));
-                    if (target) {
-                        target.scrollIntoView({
-                            behavior: 'smooth',
-                            block: 'start'
-                        });
-                    }
-                });
-            });
-
-            // Parallax effect para hero section
-            window.addEventListener('scroll', function() {
-                const scrolled = window.pageYOffset;
-                const parallax = document.querySelector('.hero-section');
-                if (parallax) {
-                    const speed = scrolled * 0.5;
-                    parallax.style.transform = `translateY(${speed}px)`;
-                }
-            });
-
-            // Toast notifications system
-            window.showToast = function(message, type = 'info', duration = 5000) {
-                const toast = document.createElement('div');
-                toast.className = `toast align-items-center text-white bg-${type} border-0 show`;
-                toast.setAttribute('role', 'alert');
-                toast.style.cssText = `
-                    position: fixed;
-                    top: 20px;
-                    right: 20px;
-                    z-index: 9999;
-                    min-width: 300px;
-                `;
-                
-                toast.innerHTML = `
-                    <div class="d-flex">
-                        <div class="toast-body">
-                            <i class="fas fa-${type === 'success' ? 'check-circle' : 'info-circle'} me-2"></i>
-                            ${message}
-                        </div>
-                        <button type="button" class="btn-close btn-close-white me-2 m-auto" onclick="this.parentElement.parentElement.remove()"></button>
-                    </div>
-                `;
-                
-                document.body.appendChild(toast);
-                
-                setTimeout(() => {
-                    if (toast.parentElement) {
-                        toast.remove();
-                    }
-                }, duration);
-            };
-
-            // Debug info no console
-            console.log('%c🎉 Conecta Eventos', 'color: #667eea; font-size: 2em; font-weight: bold;');
-            console.log('Sistema carregado com sucesso!');
-            console.log('Eventos disponíveis:', <?php echo count($eventos); ?>);
-            console.log('Banco conectado:', <?php echo $database_connected ? 'true' : 'false'; ?>);
-        });
-    </script>
-
-    <style>
-        .categoria-card {
-            transition: all 0.3s ease;
-            cursor: pointer;
-        }
-        
-        .event-card-destaque {
-            background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%);
-            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
-            transition: all 0.3s ease;
-        }
-        
-        .event-card-destaque:hover {
-            transform: translateY(-5px);
-            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15);
-        }
-        
-        .hero-section {
-            min-height: 70vh;
-            display: flex;
-            align-items: center;
-        }
-        
-        @media (max-width: 768px) {
-            .hero-title {
-                font-size: 2rem;
-            }
-            
-            .search-card {
-                padding: 1.5rem;
-            }
-            
-            .stat-number {
-                font-size: 2rem;
-            }
-        }
-        
-        /* Melhorias de acessibilidade */
-        .btn:focus,
-        .form-control:focus,
-        .form-select:focus {
-            outline: 2px solid #667eea;
-            outline-offset: 2px;
-        }
-        
-        /* Preloader */
-        .page-loader {
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            z-index: 9999;
-            opacity: 1;
-            transition: opacity 0.5s ease;
-        }
-        
-        .page-loader.hidden {
-            opacity: 0;
-            pointer-events: none;
-        }
-        
-        .loader-spinner {
-            width: 50px;
-            height: 50px;
-            border: 3px solid rgba(255, 255, 255, 0.3);
-            border-top: 3px solid white;
-            border-radius: 50%;
-            animation: spin 1s linear infinite;
-        }
-        
-        @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
-        }
-    </style>
-
-    <!-- Preloader -->
-    <div class="page-loader" id="pageLoader">
-        <div class="text-center text-white">
-            <div class="loader-spinner mx-auto mb-3"></div>
-            <div>Carregando eventos...</div>
-        </div>
-    </div>
-
-    <script>
-        // Hide preloader when page is fully loaded
-        window.addEventListener('load', function() {
-            const loader = document.getElementById('pageLoader');
-            if (loader) {
-                setTimeout(() => {
-                    loader.classList.add('hidden');
-                    setTimeout(() => loader.remove(), 500);
-                }, 500);
-            }
+            // Console log para debug
+            console.log('=== CONECTA EVENTOS DEBUG ===');
+            console.log('Database Connected:', <?php echo $database_connected ? 'true' : 'false'; ?>);
+            console.log('Total Events:', <?php echo count($eventos); ?>);
+            console.log('Filtered Events:', <?php echo count($eventos_filtrados); ?>);
+            console.log('User Logged In:', <?php echo $isUserLoggedIn ? 'true' : 'false'; ?>);
+            <?php if (!empty($eventos)): ?>
+            console.log('Events List:', <?php echo json_encode(array_map(function($e) { 
+                return ['id' => $e['id_evento'], 'titulo' => $e['titulo'], 'status' => $e['status'] ?? 'N/A']; 
+            }, array_slice($eventos, 0, 5))); ?>);
+            <?php endif; ?>
+            console.log('Press Ctrl+D to toggle debug info');
         });
     </script>
 </body>
