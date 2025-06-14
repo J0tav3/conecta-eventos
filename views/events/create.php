@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// CRIAR NOVO EVENTO - VERSÃO CORRIGIDA
+// CRIAR NOVO EVENTO - VERSÃO COM UPLOAD DE IMAGEM
 // Local: views/events/create.php
 // ==========================================
 
@@ -34,20 +34,52 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         require_once '../../config/config.php';
         require_once '../../includes/session.php';
         require_once '../../controllers/EventController.php';
+        require_once '../../handlers/ImageUploadHandler.php';
         
         $eventController = new EventController();
-        $result = $eventController->create($_POST);
+        $imageHandler = new ImageUploadHandler();
         
-        if ($result['success']) {
-            $success_message = $result['message'];
-            // Limpar dados do formulário após sucesso
-            $_POST = [];
-        } else {
-            $error_message = $result['message'];
+        // Processar upload de imagem se enviada
+        $imageResult = null;
+        if (isset($_FILES['imagem_capa']) && $_FILES['imagem_capa']['error'] !== UPLOAD_ERR_NO_FILE) {
+            $imageResult = $imageHandler->uploadImage($_FILES['imagem_capa']);
+            
+            if (!$imageResult['success']) {
+                $error_message = "Erro no upload da imagem: " . $imageResult['message'];
+            }
         }
+        
+        // Se não houve erro na imagem, criar evento
+        if (!$error_message) {
+            // Adicionar nome da imagem aos dados se upload foi bem-sucedido
+            if ($imageResult && $imageResult['success']) {
+                $_POST['imagem_capa'] = $imageResult['filename'];
+            }
+            
+            $result = $eventController->create($_POST);
+            
+            if ($result['success']) {
+                $success_message = $result['message'];
+                // Limpar dados do formulário após sucesso
+                $_POST = [];
+            } else {
+                $error_message = $result['message'];
+                
+                // Se evento falhou mas imagem foi enviada, deletar imagem
+                if ($imageResult && $imageResult['success']) {
+                    $imageHandler->deleteImage($imageResult['filename']);
+                }
+            }
+        }
+        
     } catch (Exception $e) {
         error_log("Erro ao criar evento: " . $e->getMessage());
         $error_message = "Erro interno do sistema. Tente novamente.";
+        
+        // Deletar imagem se foi enviada
+        if ($imageResult && $imageResult['success']) {
+            $imageHandler->deleteImage($imageResult['filename']);
+        }
     }
 }
 
@@ -141,11 +173,25 @@ try {
             text-align: center;
             transition: all 0.3s ease;
             cursor: pointer;
+            background: #f8f9fa;
         }
         
-        .upload-area:hover {
+        .upload-area:hover, .upload-area.dragover {
             border-color: #667eea;
-            background-color: #f8f9fa;
+            background-color: #e3f2fd;
+        }
+        
+        .upload-area.has-file {
+            border-color: #28a745;
+            background-color: #d4edda;
+        }
+        
+        .file-preview {
+            max-width: 200px;
+            max-height: 150px;
+            border-radius: 0.5rem;
+            margin: 1rem auto;
+            display: none;
         }
         
         .breadcrumb {
@@ -155,6 +201,20 @@ try {
         
         .required {
             color: #dc3545;
+        }
+        
+        .upload-progress {
+            display: none;
+            margin-top: 1rem;
+        }
+        
+        .file-info {
+            display: none;
+            margin-top: 1rem;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 0.5rem;
+            border-left: 4px solid #28a745;
         }
     </style>
 </head>
@@ -235,6 +295,55 @@ try {
         <?php endif; ?>
 
         <form method="POST" enctype="multipart/form-data" id="createEventForm">
+            <!-- Imagem de Capa -->
+            <div class="form-section">
+                <h4><i class="fas fa-image me-2"></i>Imagem de Capa</h4>
+                
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-content">
+                        <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                        <h5>Arraste uma imagem aqui ou clique para selecionar</h5>
+                        <p class="text-muted mb-2">Tamanho máximo: 5MB</p>
+                        <p class="text-muted">Formatos aceitos: JPG, PNG, GIF, WebP</p>
+                        <button type="button" class="btn btn-outline-primary" onclick="document.getElementById('imagem_capa').click()">
+                            <i class="fas fa-folder-open me-2"></i>Escolher Arquivo
+                        </button>
+                    </div>
+                </div>
+                
+                <input type="file" 
+                       class="d-none" 
+                       id="imagem_capa" 
+                       name="imagem_capa" 
+                       accept="image/jpeg,image/jpg,image/png,image/gif,image/webp">
+                
+                <img id="imagePreview" class="file-preview" alt="Preview da imagem">
+                
+                <div class="file-info" id="fileInfo">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong id="fileName"></strong>
+                            <div class="small text-muted" id="fileSize"></div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeSelectedFile()">
+                            <i class="fas fa-trash me-1"></i>Remover
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="upload-progress" id="uploadProgress">
+                    <div class="progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
+                    </div>
+                    <small class="text-muted mt-1">Processando imagem...</small>
+                </div>
+                
+                <div class="form-text">
+                    <i class="fas fa-info-circle me-1"></i>
+                    A imagem será automaticamente redimensionada se for muito grande. Recomendamos imagens em formato landscape (16:9) para melhor visualização.
+                </div>
+            </div>
+
             <!-- Informações Básicas -->
             <div class="form-section">
                 <h4><i class="fas fa-info-circle me-2"></i>Informações Básicas</h4>
@@ -441,6 +550,15 @@ try {
     
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Elementos
+            const uploadArea = document.getElementById('uploadArea');
+            const fileInput = document.getElementById('imagem_capa');
+            const imagePreview = document.getElementById('imagePreview');
+            const fileInfo = document.getElementById('fileInfo');
+            const fileName = document.getElementById('fileName');
+            const fileSize = document.getElementById('fileSize');
+            const uploadProgress = document.getElementById('uploadProgress');
+
             // Toggle preço baseado em evento gratuito
             const eventoGratuito = document.getElementById('evento_gratuito');
             const precoSection = document.getElementById('preco_section');
@@ -451,6 +569,90 @@ try {
                     document.getElementById('preco').value = '';
                 }
             });
+
+            // Upload de imagem - Drag and Drop
+            uploadArea.addEventListener('click', function() {
+                fileInput.click();
+            });
+
+            uploadArea.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                uploadArea.classList.add('dragover');
+            });
+
+            uploadArea.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+            });
+
+            uploadArea.addEventListener('drop', function(e) {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleFileSelect(files[0]);
+                }
+            });
+
+            fileInput.addEventListener('change', function(e) {
+                if (e.target.files.length > 0) {
+                    handleFileSelect(e.target.files[0]);
+                }
+            });
+
+            // Processar arquivo selecionado
+            function handleFileSelect(file) {
+                // Validar tipo de arquivo
+                const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+                if (!allowedTypes.includes(file.type)) {
+                    showToast('Tipo de arquivo não permitido. Use: JPG, PNG, GIF ou WebP', 'error');
+                    return;
+                }
+
+                // Validar tamanho (5MB)
+                if (file.size > 5 * 1024 * 1024) {
+                    showToast('Arquivo muito grande. Tamanho máximo: 5MB', 'error');
+                    return;
+                }
+
+                // Mostrar preview
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    imagePreview.src = e.target.result;
+                    imagePreview.style.display = 'block';
+                    
+                    // Atualizar UI
+                    uploadArea.classList.add('has-file');
+                    fileName.textContent = file.name;
+                    fileSize.textContent = formatFileSize(file.size);
+                    fileInfo.style.display = 'block';
+                    
+                    // Esconder conteúdo original
+                    uploadArea.querySelector('.upload-content').style.display = 'none';
+                };
+                reader.readAsDataURL(file);
+            }
+
+            // Remover arquivo selecionado
+            window.removeSelectedFile = function() {
+                fileInput.value = '';
+                imagePreview.style.display = 'none';
+                fileInfo.style.display = 'none';
+                uploadArea.classList.remove('has-file');
+                uploadArea.querySelector('.upload-content').style.display = 'block';
+            };
+
+            // Formatar tamanho do arquivo
+            function formatFileSize(bytes) {
+                if (bytes >= 1048576) {
+                    return (bytes / 1048576).toFixed(2) + ' MB';
+                } else if (bytes >= 1024) {
+                    return (bytes / 1024).toFixed(2) + ' KB';
+                } else {
+                    return bytes + ' B';
+                }
+            }
 
             // Máscara de CEP
             const cepInput = document.getElementById('local_cep');
@@ -473,17 +675,27 @@ try {
 
             // Loading no submit
             const form = document.getElementById('createEventForm');
-            form.addEventListener('submit', function() {
+            form.addEventListener('submit', function(e) {
+                // Verificar se há imagem para upload
+                const hasImage = fileInput.files.length > 0;
+                
+                if (hasImage) {
+                    // Mostrar progresso de upload
+                    uploadProgress.style.display = 'block';
+                }
+                
                 const submitBtn = form.querySelector('button[type="submit"]');
                 const originalText = submitBtn.innerHTML;
                 submitBtn.disabled = true;
-                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Criando evento...';
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>' + 
+                                    (hasImage ? 'Enviando imagem e criando evento...' : 'Criando evento...');
                 
-                // Re-enable after 5 seconds if still on page (error case)
+                // Re-enable after 10 seconds if still on page (error case)
                 setTimeout(() => {
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = originalText;
-                }, 5000);
+                    uploadProgress.style.display = 'none';
+                }, 10000);
             });
 
             // Auto-hide alerts
@@ -496,6 +708,34 @@ try {
                     }
                 }, 7000);
             });
+
+            // Sistema de toast notifications
+            window.showToast = function(message, type = 'info') {
+                const toast = document.createElement('div');
+                toast.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show position-fixed`;
+                toast.style.cssText = `
+                    top: 20px;
+                    right: 20px;
+                    z-index: 9999;
+                    min-width: 300px;
+                    max-width: 400px;
+                    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+                `;
+                
+                toast.innerHTML = `
+                    <i class="fas fa-${type === 'error' ? 'exclamation-circle' : 'info-circle'} me-2"></i>
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+
+                document.body.appendChild(toast);
+
+                setTimeout(() => {
+                    if (toast.parentNode) {
+                        toast.remove();
+                    }
+                }, 4000);
+            };
         });
     </script>
 </body>

@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// EVENT CONTROLLER - VERSÃO CORRIGIDA COMPLETA
+// EVENT CONTROLLER - VERSÃO COM UPLOAD DE IMAGEM
 // Local: controllers/EventController.php
 // ==========================================
 
@@ -112,6 +112,11 @@ class EventController {
             $stmt->execute();
             $eventos = $stmt->fetchAll(PDO::FETCH_ASSOC);
             
+            // Adicionar URL das imagens
+            foreach ($eventos as &$evento) {
+                $evento['imagem_url'] = $this->getImageUrl($evento['imagem_capa']);
+            }
+            
             $this->log("Encontrados " . count($eventos) . " eventos");
             return $eventos ?: [];
 
@@ -122,7 +127,7 @@ class EventController {
     }
 
     /**
-     * NOVA FUNÇÃO: Buscar eventos de um organizador específico
+     * Buscar eventos de um organizador específico
      */
     public function getEventsByOrganizer($userId, $params = []) {
         if (!$this->conn) {
@@ -179,6 +184,7 @@ class EventController {
                 $evento['horario_formatado'] = date('H:i', strtotime($evento['horario_inicio']));
                 $evento['preco_formatado'] = $evento['evento_gratuito'] ? 'Gratuito' : 'R$ ' . number_format($evento['preco'], 2, ',', '.');
                 $evento['created_at'] = $evento['data_criacao'];
+                $evento['imagem_url'] = $this->getImageUrl($evento['imagem_capa']);
             }
             
             return $eventos;
@@ -239,6 +245,11 @@ class EventController {
             $stmt->execute();
 
             $evento = $stmt->fetch(PDO::FETCH_ASSOC);
+            
+            if ($evento) {
+                $evento['imagem_url'] = $this->getImageUrl($evento['imagem_capa']);
+            }
+            
             $this->log("Evento encontrado: " . ($evento ? $evento['titulo'] : 'não encontrado'));
             return $evento;
 
@@ -301,6 +312,7 @@ class EventController {
             $capacidade_maxima = !empty($data['max_participantes']) ? (int)$data['max_participantes'] : null;
             $requisitos = !empty($data['requisitos']) ? trim($data['requisitos']) : null;
             $informacoes_adicionais = !empty($data['o_que_levar']) ? trim($data['o_que_levar']) : null;
+            $imagem_capa = !empty($data['imagem_capa']) ? $data['imagem_capa'] : null;
 
             $this->log("Dados preparados para inserção");
 
@@ -314,13 +326,13 @@ class EventController {
                             data_inicio, data_fim, horario_inicio, horario_fim,
                             local_nome, local_endereco, local_cidade, local_estado, local_cep,
                             evento_gratuito, preco, capacidade_maxima,
-                            requisitos, informacoes_adicionais, status, data_criacao
+                            requisitos, informacoes_adicionais, imagem_capa, status, data_criacao
                         ) VALUES (
                             :organizador_id, :categoria_id, :titulo, :descricao,
                             :data_inicio, :data_fim, :horario_inicio, :horario_fim,
                             :local_nome, :local_endereco, :local_cidade, :local_estado, :local_cep,
                             :evento_gratuito, :preco, :capacidade_maxima,
-                            :requisitos, :informacoes_adicionais, 'rascunho', NOW()
+                            :requisitos, :informacoes_adicionais, :imagem_capa, 'rascunho', NOW()
                         )";
 
                 $stmt = $this->conn->prepare($sql);
@@ -344,6 +356,7 @@ class EventController {
                 $stmt->bindValue(':capacidade_maxima', $capacidade_maxima, PDO::PARAM_INT);
                 $stmt->bindValue(':requisitos', $requisitos, PDO::PARAM_STR);
                 $stmt->bindValue(':informacoes_adicionais', $informacoes_adicionais, PDO::PARAM_STR);
+                $stmt->bindValue(':imagem_capa', $imagem_capa, PDO::PARAM_STR);
 
                 $result = $stmt->execute();
 
@@ -356,7 +369,7 @@ class EventController {
 
                     return [
                         'success' => true,
-                        'message' => 'Evento criado com sucesso!',
+                        'message' => $imagem_capa ? 'Evento criado com sucesso e imagem enviada!' : 'Evento criado com sucesso!',
                         'evento_id' => $evento_id
                     ];
                 } else {
@@ -430,6 +443,12 @@ class EventController {
         }
 
         try {
+            // Buscar dados atuais do evento para comparação
+            $currentEvent = $this->getById($eventId);
+            if (!$currentEvent) {
+                return ['success' => false, 'message' => 'Evento não encontrado'];
+            }
+
             // Preparar dados
             $titulo = trim($data['titulo'] ?? '');
             $descricao = trim($data['descricao'] ?? '');
@@ -451,64 +470,90 @@ class EventController {
             $status = $data['status'] ?? 'rascunho';
             $destaque = isset($data['destaque']) ? 1 : 0;
 
-            $sql = "UPDATE eventos SET 
-                        titulo = :titulo,
-                        descricao = :descricao,
-                        id_categoria = :id_categoria,
-                        data_inicio = :data_inicio,
-                        data_fim = :data_fim,
-                        horario_inicio = :horario_inicio,
-                        horario_fim = :horario_fim,
-                        local_nome = :local_nome,
-                        local_endereco = :local_endereco,
-                        local_cidade = :local_cidade,
-                        local_estado = :local_estado,
-                        local_cep = :local_cep,
-                        capacidade_maxima = :capacidade_maxima,
-                        evento_gratuito = :evento_gratuito,
-                        preco = :preco,
-                        requisitos = :requisitos,
-                        informacoes_adicionais = :informacoes_adicionais,
-                        status = :status,
-                        destaque = :destaque,
-                        data_atualizacao = NOW()
-                    WHERE id_evento = :id";
+            // Iniciar transação
+            $this->conn->beginTransaction();
 
-            $stmt = $this->conn->prepare($sql);
-            
-            $result = $stmt->execute([
-                ':titulo' => $titulo,
-                ':descricao' => $descricao,
-                ':id_categoria' => $id_categoria,
-                ':data_inicio' => $data_inicio,
-                ':data_fim' => $data_fim,
-                ':horario_inicio' => $horario_inicio,
-                ':horario_fim' => $horario_fim,
-                ':local_nome' => $local_nome,
-                ':local_endereco' => $local_endereco,
-                ':local_cidade' => $local_cidade,
-                ':local_estado' => $local_estado,
-                ':local_cep' => $local_cep,
-                ':capacidade_maxima' => $capacidade_maxima,
-                ':evento_gratuito' => $evento_gratuito,
-                ':preco' => $preco,
-                ':requisitos' => $requisitos,
-                ':informacoes_adicionais' => $informacoes_adicionais,
-                ':status' => $status,
-                ':destaque' => $destaque,
-                ':id' => $eventId
-            ]);
+            try {
+                // Preparar SQL base
+                $sql = "UPDATE eventos SET 
+                            titulo = :titulo,
+                            descricao = :descricao,
+                            id_categoria = :id_categoria,
+                            data_inicio = :data_inicio,
+                            data_fim = :data_fim,
+                            horario_inicio = :horario_inicio,
+                            horario_fim = :horario_fim,
+                            local_nome = :local_nome,
+                            local_endereco = :local_endereco,
+                            local_cidade = :local_cidade,
+                            local_estado = :local_estado,
+                            local_cep = :local_cep,
+                            capacidade_maxima = :capacidade_maxima,
+                            evento_gratuito = :evento_gratuito,
+                            preco = :preco,
+                            requisitos = :requisitos,
+                            informacoes_adicionais = :informacoes_adicionais,
+                            status = :status,
+                            destaque = :destaque,
+                            data_atualizacao = NOW()";
 
-            if ($result) {
-                return [
-                    'success' => true,
-                    'message' => 'Evento atualizado com sucesso!'
+                $params = [
+                    ':titulo' => $titulo,
+                    ':descricao' => $descricao,
+                    ':id_categoria' => $id_categoria,
+                    ':data_inicio' => $data_inicio,
+                    ':data_fim' => $data_fim,
+                    ':horario_inicio' => $horario_inicio,
+                    ':horario_fim' => $horario_fim,
+                    ':local_nome' => $local_nome,
+                    ':local_endereco' => $local_endereco,
+                    ':local_cidade' => $local_cidade,
+                    ':local_estado' => $local_estado,
+                    ':local_cep' => $local_cep,
+                    ':capacidade_maxima' => $capacidade_maxima,
+                    ':evento_gratuito' => $evento_gratuito,
+                    ':preco' => $preco,
+                    ':requisitos' => $requisitos,
+                    ':informacoes_adicionais' => $informacoes_adicionais,
+                    ':status' => $status,
+                    ':destaque' => $destaque,
+                    ':id' => $eventId
                 ];
-            } else {
-                return [
-                    'success' => false,
-                    'message' => 'Erro ao atualizar evento.'
-                ];
+
+                // Verificar se há nova imagem
+                if (isset($data['imagem_capa'])) {
+                    $sql .= ", imagem_capa = :imagem_capa";
+                    $params[':imagem_capa'] = $data['imagem_capa'];
+                }
+
+                $sql .= " WHERE id_evento = :id";
+
+                $stmt = $this->conn->prepare($sql);
+                $result = $stmt->execute($params);
+
+                if ($result) {
+                    $this->conn->commit();
+                    
+                    $message = 'Evento atualizado com sucesso!';
+                    if (isset($data['imagem_capa'])) {
+                        $message = 'Evento e imagem atualizados com sucesso!';
+                    }
+                    
+                    return [
+                        'success' => true,
+                        'message' => $message
+                    ];
+                } else {
+                    $this->conn->rollback();
+                    return [
+                        'success' => false,
+                        'message' => 'Erro ao atualizar evento.'
+                    ];
+                }
+
+            } catch (Exception $e) {
+                $this->conn->rollback();
+                throw $e;
             }
 
         } catch (Exception $e) {
@@ -518,6 +563,18 @@ class EventController {
                 'message' => 'Erro interno: ' . $e->getMessage()
             ];
         }
+    }
+
+    /**
+     * Obter URL da imagem
+     */
+    private function getImageUrl($imageName) {
+        if (!$imageName) {
+            return null;
+        }
+        
+        $baseUrl = 'https://conecta-eventos-production.up.railway.app';
+        return $baseUrl . '/uploads/eventos/' . $imageName;
     }
 
     /**
@@ -534,7 +591,8 @@ class EventController {
                 'local_cidade' => 'São Paulo',
                 'evento_gratuito' => 1,
                 'preco' => 0,
-                'imagem_capa' => '',
+                'imagem_capa' => null,
+                'imagem_url' => null,
                 'id_categoria' => 1,
                 'nome_categoria' => 'Tecnologia',
                 'total_inscritos' => 45,
@@ -550,7 +608,8 @@ class EventController {
                 'local_cidade' => 'Rio de Janeiro',
                 'evento_gratuito' => 0,
                 'preco' => 50.00,
-                'imagem_capa' => '',
+                'imagem_capa' => null,
+                'imagem_url' => null,
                 'id_categoria' => 2,
                 'nome_categoria' => 'Negócios',
                 'total_inscritos' => 32,
@@ -568,7 +627,7 @@ class EventController {
     }
 
     /**
-     * NOVA FUNÇÃO: Dados de exemplo para eventos do organizador
+     * Dados de exemplo para eventos do organizador
      */
     private function getExampleOrganizerEvents($userId) {
         // Retornar array vazio se for modo de exemplo
@@ -600,6 +659,7 @@ class EventController {
         $evento['preco_formatado'] = $evento['evento_gratuito'] ? 'Gratuito' : 'R$ ' . number_format($evento['preco'], 2, ',', '.');
         $evento['vagas_esgotadas'] = $evento['capacidade_maxima'] && $evento['total_inscritos'] >= $evento['capacidade_maxima'];
         $evento['percentual_ocupacao'] = $evento['capacidade_maxima'] ? ($evento['total_inscritos'] / $evento['capacidade_maxima']) * 100 : 0;
+        $evento['imagem_url'] = $this->getImageUrl($evento['imagem_capa']);
 
         return $evento;
     }
@@ -629,6 +689,126 @@ class EventController {
         } catch (Exception $e) {
             $this->log("Erro ao buscar estatísticas: " . $e->getMessage());
             return null;
+        }
+    }
+
+    /**
+     * Deletar evento
+     */
+    public function delete($eventId) {
+        if (!$this->conn) {
+            return ['success' => false, 'message' => 'Banco de dados indisponível'];
+        }
+
+        if (!$this->canEdit($eventId)) {
+            return ['success' => false, 'message' => 'Sem permissão para excluir este evento'];
+        }
+
+        try {
+            // Buscar dados do evento antes de deletar (para remover imagem)
+            $evento = $this->getById($eventId);
+            
+            $this->conn->beginTransaction();
+
+            // Deletar inscrições relacionadas primeiro
+            $stmt = $this->conn->prepare("DELETE FROM inscricoes WHERE id_evento = ?");
+            $stmt->execute([$eventId]);
+
+            // Deletar favoritos relacionados
+            $stmt = $this->conn->prepare("DELETE FROM favoritos WHERE id_evento = ?");
+            $stmt->execute([$eventId]);
+
+            // Deletar notificações relacionadas
+            $stmt = $this->conn->prepare("DELETE FROM notificacoes WHERE id_referencia = ? AND tipo = 'evento'");
+            $stmt->execute([$eventId]);
+
+            // Deletar o evento
+            $stmt = $this->conn->prepare("DELETE FROM eventos WHERE id_evento = ?");
+            $result = $stmt->execute([$eventId]);
+
+            if ($result && $stmt->rowCount() > 0) {
+                $this->conn->commit();
+
+                // Remover imagem se existir
+                if ($evento && $evento['imagem_capa']) {
+                    require_once __DIR__ . '/../handlers/ImageUploadHandler.php';
+                    $imageHandler = new ImageUploadHandler();
+                    $imageHandler->deleteImage($evento['imagem_capa']);
+                }
+
+                return [
+                    'success' => true,
+                    'message' => 'Evento excluído com sucesso!'
+                ];
+            } else {
+                $this->conn->rollback();
+                return [
+                    'success' => false,
+                    'message' => 'Evento não encontrado ou já foi excluído.'
+                ];
+            }
+
+        } catch (Exception $e) {
+            $this->conn->rollback();
+            $this->log("Erro ao deletar evento: " . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Erro interno: ' . $e->getMessage()
+            ];
+        }
+    }
+
+    /**
+     * Alterar status do evento
+     */
+    public function changeStatus($eventId, $newStatus) {
+        if (!$this->conn) {
+            return ['success' => false, 'message' => 'Banco de dados indisponível'];
+        }
+
+        if (!$this->canEdit($eventId)) {
+            return ['success' => false, 'message' => 'Sem permissão para alterar este evento'];
+        }
+
+        $allowedStatuses = ['rascunho', 'publicado', 'cancelado', 'finalizado'];
+        if (!in_array($newStatus, $allowedStatuses)) {
+            return ['success' => false, 'message' => 'Status inválido'];
+        }
+
+        try {
+            $stmt = $this->conn->prepare("
+                UPDATE eventos 
+                SET status = ?, data_atualizacao = NOW() 
+                WHERE id_evento = ?
+            ");
+            
+            $result = $stmt->execute([$newStatus, $eventId]);
+
+            if ($result && $stmt->rowCount() > 0) {
+                $statusNames = [
+                    'rascunho' => 'rascunho',
+                    'publicado' => 'publicado',
+                    'cancelado' => 'cancelado',
+                    'finalizado' => 'finalizado'
+                ];
+
+                return [
+                    'success' => true,
+                    'message' => 'Status do evento alterado para "' . $statusNames[$newStatus] . '" com sucesso!'
+                ];
+            } else {
+                return [
+                    'success' => false,
+                    'message' => 'Erro ao alterar status do evento.'
+                ];
+            }
+
+        } catch (Exception $e) {
+            $this->log("Erro ao alterar status: " . $e->getMessage());
+            return [
+                'success' => false,
+                'message' => 'Erro interno: ' . $e->getMessage()
+            ];
         }
     }
 }

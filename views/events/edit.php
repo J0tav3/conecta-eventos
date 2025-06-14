@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// EDITAR EVENTO - VERSÃO COMPLETA ATUALIZADA
+// EDITAR EVENTO - VERSÃO COM UPLOAD DE IMAGEM
 // Local: views/events/edit.php
 // ==========================================
 
@@ -61,40 +61,77 @@ if (!$evento) {
 // Processar formulário
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$error_message) {
     try {
-        // Preparar dados para atualização
-        $updateData = [
-            'titulo' => trim($_POST['titulo'] ?? ''),
-            'descricao' => trim($_POST['descricao'] ?? ''),
-            'id_categoria' => !empty($_POST['categoria']) ? (int)$_POST['categoria'] : null,
-            'data_inicio' => $_POST['data_inicio'] ?? '',
-            'data_fim' => $_POST['data_fim'] ?? $_POST['data_inicio'],
-            'horario_inicio' => $_POST['horario_inicio'] ?? '',
-            'horario_fim' => $_POST['horario_fim'] ?? $_POST['horario_inicio'],
-            'local_nome' => trim($_POST['local_nome'] ?? ''),
-            'local_endereco' => trim($_POST['local_endereco'] ?? ''),
-            'local_cidade' => trim($_POST['local_cidade'] ?? ''),
-            'local_estado' => $_POST['local_estado'] ?? '',
-            'local_cep' => $_POST['local_cep'] ?? null,
-            'capacidade_maxima' => !empty($_POST['max_participantes']) ? (int)$_POST['max_participantes'] : null,
-            'evento_gratuito' => isset($_POST['evento_gratuito']) ? 1 : 0,
-            'preco' => isset($_POST['evento_gratuito']) ? 0 : (float)($_POST['preco'] ?? 0),
-            'requisitos' => trim($_POST['requisitos'] ?? ''),
-            'informacoes_adicionais' => trim($_POST['o_que_levar'] ?? ''),
-            'status' => $_POST['status'] ?? 'rascunho'
-        ];
+        require_once '../../handlers/ImageUploadHandler.php';
+        $imageHandler = new ImageUploadHandler();
         
-        $result = $eventController->update($eventId, $updateData);
+        // Processar upload de nova imagem se enviada
+        $imageResult = null;
+        $newImageName = null;
         
-        if ($result['success']) {
-            $success_message = $result['message'];
-            // Recarregar dados atualizados
-            $evento = $eventController->getById($eventId);
-        } else {
-            $error_message = $result['message'];
+        if (isset($_FILES['imagem_capa']) && $_FILES['imagem_capa']['error'] !== UPLOAD_ERR_NO_FILE) {
+            $oldImageName = $evento['imagem_capa']; // Imagem atual para remoção se upload for bem-sucedido
+            $imageResult = $imageHandler->uploadImage($_FILES['imagem_capa'], $oldImageName);
+            
+            if (!$imageResult['success']) {
+                $error_message = "Erro no upload da imagem: " . $imageResult['message'];
+            } else {
+                $newImageName = $imageResult['filename'];
+            }
         }
+        
+        // Se não houve erro na imagem, atualizar evento
+        if (!$error_message) {
+            // Preparar dados para atualização
+            $updateData = [
+                'titulo' => trim($_POST['titulo'] ?? ''),
+                'descricao' => trim($_POST['descricao'] ?? ''),
+                'id_categoria' => !empty($_POST['categoria']) ? (int)$_POST['categoria'] : null,
+                'data_inicio' => $_POST['data_inicio'] ?? '',
+                'data_fim' => $_POST['data_fim'] ?? $_POST['data_inicio'],
+                'horario_inicio' => $_POST['horario_inicio'] ?? '',
+                'horario_fim' => $_POST['horario_fim'] ?? $_POST['horario_inicio'],
+                'local_nome' => trim($_POST['local_nome'] ?? ''),
+                'local_endereco' => trim($_POST['local_endereco'] ?? ''),
+                'local_cidade' => trim($_POST['local_cidade'] ?? ''),
+                'local_estado' => $_POST['local_estado'] ?? '',
+                'local_cep' => $_POST['local_cep'] ?? null,
+                'capacidade_maxima' => !empty($_POST['max_participantes']) ? (int)$_POST['max_participantes'] : null,
+                'evento_gratuito' => isset($_POST['evento_gratuito']) ? 1 : 0,
+                'preco' => isset($_POST['evento_gratuito']) ? 0 : (float)($_POST['preco'] ?? 0),
+                'requisitos' => trim($_POST['requisitos'] ?? ''),
+                'informacoes_adicionais' => trim($_POST['o_que_levar'] ?? ''),
+                'status' => $_POST['status'] ?? 'rascunho'
+            ];
+            
+            // Adicionar nova imagem se foi enviada
+            if ($newImageName) {
+                $updateData['imagem_capa'] = $newImageName;
+            }
+            
+            $result = $eventController->update($eventId, $updateData);
+            
+            if ($result['success']) {
+                $success_message = $result['message'];
+                // Recarregar dados atualizados
+                $evento = $eventController->getById($eventId);
+            } else {
+                $error_message = $result['message'];
+                
+                // Se evento falhou mas imagem foi enviada, deletar imagem nova
+                if ($newImageName) {
+                    $imageHandler->deleteImage($newImageName);
+                }
+            }
+        }
+        
     } catch (Exception $e) {
         error_log("Erro ao atualizar evento: " . $e->getMessage());
         $error_message = "Erro interno do sistema. Tente novamente.";
+        
+        // Deletar imagem se foi enviada
+        if ($newImageName) {
+            $imageHandler->deleteImage($newImageName);
+        }
     }
 }
 
@@ -117,7 +154,8 @@ $defaults = [
     'preco' => $evento['preco'] ?? '',
     'requisitos' => $evento['requisitos'] ?? '',
     'o_que_levar' => $evento['informacoes_adicionais'] ?? '',
-    'status' => $evento['status'] ?? 'rascunho'
+    'status' => $evento['status'] ?? 'rascunho',
+    'imagem_capa' => $evento['imagem_capa'] ?? ''
 ];
 
 // Sobrescrever com dados do POST em caso de erro
@@ -127,6 +165,12 @@ if ($_POST && $error_message) {
             $defaults[$key] = $_POST[$key];
         }
     }
+}
+
+// URL da imagem atual
+$currentImageUrl = '';
+if ($defaults['imagem_capa']) {
+    $currentImageUrl = 'https://conecta-eventos-production.up.railway.app/uploads/eventos/' . $defaults['imagem_capa'];
 }
 ?>
 
@@ -199,6 +243,42 @@ if ($_POST && $error_message) {
             margin-bottom: 2rem;
         }
         
+        .upload-area {
+            border: 2px dashed #dee2e6;
+            border-radius: 0.5rem;
+            padding: 2rem;
+            text-align: center;
+            transition: all 0.3s ease;
+            cursor: pointer;
+            background: #f8f9fa;
+        }
+        
+        .upload-area:hover, .upload-area.dragover {
+            border-color: #28a745;
+            background-color: #e8f5e8;
+        }
+        
+        .upload-area.has-file {
+            border-color: #28a745;
+            background-color: #d4edda;
+        }
+        
+        .current-image {
+            max-width: 200px;
+            max-height: 150px;
+            border-radius: 0.5rem;
+            margin-bottom: 1rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .file-preview {
+            max-width: 200px;
+            max-height: 150px;
+            border-radius: 0.5rem;
+            margin: 1rem auto;
+            display: none;
+        }
+        
         .breadcrumb {
             background: transparent;
             padding: 0;
@@ -213,6 +293,19 @@ if ($_POST && $error_message) {
             top: 1rem;
             right: 1rem;
             z-index: 10;
+        }
+        
+        .image-actions {
+            margin-top: 1rem;
+        }
+        
+        .file-info {
+            display: none;
+            margin-top: 1rem;
+            padding: 1rem;
+            background: #f8f9fa;
+            border-radius: 0.5rem;
+            border-left: 4px solid #28a745;
         }
     </style>
 </head>
@@ -331,6 +424,63 @@ if ($_POST && $error_message) {
         <?php endif; ?>
 
         <form method="POST" enctype="multipart/form-data" id="editEventForm">
+            <!-- Imagem de Capa -->
+            <div class="form-section">
+                <h4><i class="fas fa-image me-2"></i>Imagem de Capa</h4>
+                
+                <!-- Imagem Atual -->
+                <?php if ($currentImageUrl): ?>
+                    <div class="mb-3">
+                        <label class="form-label">Imagem atual:</label>
+                        <div>
+                            <img src="<?php echo $currentImageUrl; ?>" alt="Imagem atual do evento" class="current-image">
+                            <div class="image-actions">
+                                <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeCurrentImage()">
+                                    <i class="fas fa-trash me-1"></i>Remover Imagem Atual
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                <?php endif; ?>
+                
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-content">
+                        <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                        <h5><?php echo $currentImageUrl ? 'Substituir por nova imagem' : 'Adicionar imagem de capa'; ?></h5>
+                        <p class="text-muted mb-2">Tamanho máximo: 5MB</p>
+                        <p class="text-muted">Formatos aceitos: JPG, PNG, GIF, WebP</p>
+                        <button type="button" class="btn btn-outline-primary" onclick="document.getElementById('imagem_capa').click()">
+                            <i class="fas fa-folder-open me-2"></i>Escolher Arquivo
+                        </button>
+                    </div>
+                </div>
+                
+                <input type="file" 
+                       class="d-none" 
+                       id="imagem_capa" 
+                       name="imagem_capa" 
+                       accept="image/jpeg,image/jpg,image/png,image/gif,image/webp">
+                
+                <img id="imagePreview" class="file-preview" alt="Preview da nova imagem">
+                
+                <div class="file-info" id="fileInfo">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong id="fileName"></strong>
+                            <div class="small text-muted" id="fileSize"></div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeSelectedFile()">
+                            <i class="fas fa-trash me-1"></i>Remover
+                        </button>
+                    </div>
+                </div>
+                
+                <div class="form-text">
+                    <i class="fas fa-info-circle me-1"></i>
+                    Se uma nova imagem for enviada, ela substituirá a imagem atual. A imagem será automaticamente redimensionada se for muito grande.
+                </div>
+            </div>
+
             <!-- Informações Básicas -->
             <div class="form-section">
                 <h4><i class="fas fa-info-circle me-2"></i>Informações Básicas</h4>
@@ -551,6 +701,14 @@ if ($_POST && $error_message) {
     
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            // Elementos
+            const uploadArea = document.getElementById('uploadArea');
+            const fileInput = document.getElementById('imagem_capa');
+            const imagePreview = document.getElementById('imagePreview');
+            const fileInfo = document.getElementById('fileInfo');
+            const fileName = document.getElementById('fileName');
+            const fileSize = document.getElementById('fileSize');
+
             // Toggle preço baseado em evento gratuito
             const eventoGratuito = document.getElementById('evento_gratuito');
             const precoSection = document.getElementById('preco_section');
@@ -561,6 +719,107 @@ if ($_POST && $error_message) {
                     document.getElementById('preco').value = '';
                 }
             });
+
+            // Upload de imagem - Drag and Drop
+            uploadArea.addEventListener('click', function() {
+                fileInput.click();
+            });
+
+            uploadArea.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                uploadArea.classList.add('dragover');
+            });
+
+            uploadArea.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+            });
+
+            uploadArea.addEventListener('drop', function(e) {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleFileSelect(files[0]);
+                }
+            });
+
+            fileInput.addEventListener('change', function(e) {
+                if (e.target.files.length > 0) {
+                    handleFileSelect(e.target.files[0]);
+                }
+            });
+
+            // Processar arquivo selecionado
+            function handleFileSelect(file) {
+                // Validar tipo de arquivo
+                const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+                if (!allowedTypes.includes(file.type)) {
+                    showToast('Tipo de arquivo não permitido. Use: JPG, PNG, GIF ou WebP', 'error');
+                    return;
+                }
+
+                // Validar tamanho (5MB)
+                if (file.size > 5 * 1024 * 1024) {
+                    showToast('Arquivo muito grande. Tamanho máximo: 5MB', 'error');
+                    return;
+                }
+
+                // Mostrar preview
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    imagePreview.src = e.target.result;
+                    imagePreview.style.display = 'block';
+                    
+                    // Atualizar UI
+                    uploadArea.classList.add('has-file');
+                    fileName.textContent = file.name;
+                    fileSize.textContent = formatFileSize(file.size);
+                    fileInfo.style.display = 'block';
+                    
+                    // Esconder conteúdo original
+                    uploadArea.querySelector('.upload-content').style.display = 'none';
+                };
+                reader.readAsDataURL(file);
+            }
+
+            // Remover arquivo selecionado
+            window.removeSelectedFile = function() {
+                fileInput.value = '';
+                imagePreview.style.display = 'none';
+                fileInfo.style.display = 'none';
+                uploadArea.classList.remove('has-file');
+                uploadArea.querySelector('.upload-content').style.display = 'block';
+            };
+
+            // Remover imagem atual (adicionar campo hidden para backend)
+            window.removeCurrentImage = function() {
+                if (confirm('Tem certeza que deseja remover a imagem atual do evento?')) {
+                    const currentImageDiv = document.querySelector('.current-image').parentElement.parentElement;
+                    currentImageDiv.style.display = 'none';
+                    
+                    // Adicionar campo hidden para indicar remoção
+                    const hiddenInput = document.createElement('input');
+                    hiddenInput.type = 'hidden';
+                    hiddenInput.name = 'remove_current_image';
+                    hiddenInput.value = '1';
+                    document.getElementById('editEventForm').appendChild(hiddenInput);
+                    
+                    showToast('Imagem atual será removida ao salvar o evento.', 'info');
+                }
+            };
+
+            // Formatar tamanho do arquivo
+            function formatFileSize(bytes) {
+                if (bytes >= 1048576) {
+                    return (bytes / 1048576).toFixed(2) + ' MB';
+                } else if (bytes >= 1024) {
+                    return (bytes / 1024).toFixed(2) + ' KB';
+                } else {
+                    return bytes + ' B';
+                }
+            }
 
             // Máscara de CEP
             const cepInput = document.getElementById('local_cep');
@@ -584,16 +843,19 @@ if ($_POST && $error_message) {
             // Loading no submit
             const form = document.getElementById('editEventForm');
             form.addEventListener('submit', function() {
+                const hasNewImage = fileInput.files.length > 0;
+                
                 const submitBtn = form.querySelector('button[type="submit"]');
                 const originalText = submitBtn.innerHTML;
                 submitBtn.disabled = true;
-                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Salvando...';
+                submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>' + 
+                                    (hasNewImage ? 'Enviando imagem e salvando...' : 'Salvando alterações...');
                 
-                // Re-enable after 5 seconds if still on page (error case)
+                // Re-enable after 10 seconds if still on page (error case)
                 setTimeout(() => {
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = originalText;
-                }, 5000);
+                }, 10000);
             });
 
             // Auto-hide alerts
@@ -643,48 +905,49 @@ if ($_POST && $error_message) {
                     }
                 }
             });
+
+            // Sistema de toast notifications
+            window.showToast = function(message, type = 'info') {
+                const toast = document.createElement('div');
+                toast.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show position-fixed`;
+                toast.style.cssText = `
+                    top: 20px;
+                    right: 20px;
+                    z-index: 9999;
+                    min-width: 300px;
+                    max-width: 400px;
+                    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+                `;
+                
+                const icons = {
+                    success: 'fas fa-check-circle',
+                    info: 'fas fa-info-circle',
+                    warning: 'fas fa-exclamation-triangle',
+                    danger: 'fas fa-exclamation-circle',
+                    error: 'fas fa-exclamation-circle'
+                };
+                
+                toast.innerHTML = `
+                    <i class="${icons[type] || icons.info} me-2"></i>
+                    ${message}
+                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                `;
+
+                document.body.appendChild(toast);
+
+                setTimeout(() => {
+                    if (toast.parentNode) {
+                        const bsAlert = bootstrap.Alert.getOrCreateInstance(toast);
+                        bsAlert.close();
+                    }
+                }, 4000);
+            };
         });
 
         // Função para visualizar evento
         function previewEvent() {
             const eventId = <?php echo $eventId; ?>;
             window.open(`view.php?id=${eventId}`, '_blank');
-        }
-
-        // Sistema de toast notifications
-        function showToast(message, type = 'info') {
-            const toast = document.createElement('div');
-            toast.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show position-fixed`;
-            toast.style.cssText = `
-                top: 20px;
-                right: 20px;
-                z-index: 9999;
-                min-width: 300px;
-                max-width: 400px;
-                box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            `;
-            
-            const icons = {
-                success: 'fas fa-check-circle',
-                info: 'fas fa-info-circle',
-                warning: 'fas fa-exclamation-triangle',
-                danger: 'fas fa-exclamation-circle',
-                error: 'fas fa-exclamation-circle'
-            };
-            
-            toast.innerHTML = `
-                <i class="${icons[type] || icons.info} me-2"></i>
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            `;
-
-            document.body.appendChild(toast);
-
-            setTimeout(() => {
-                if (toast.parentNode) {
-                    toast.remove();
-                }
-            }, 4000);
         }
     </script>
 </body>

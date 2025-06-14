@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// API PARA AÇÕES DE EVENTOS - VERSÃO ATUALIZADA
+// API PARA AÇÕES DE EVENTOS - VERSÃO COM UPLOAD DE IMAGENS
 // Local: api/event-actions.php
 // ==========================================
 
@@ -31,12 +31,14 @@ if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'organizador') 
 
 require_once '../config/database.php';
 require_once '../controllers/EventController.php';
+require_once '../handlers/ImageUploadHandler.php'; // NOVA INCLUSÃO
 
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? $_POST['action'] ?? '';
 $eventId = $_GET['id'] ?? $_POST['id'] ?? 0;
 
 $eventController = new EventController();
+$imageHandler = new ImageUploadHandler(); // NOVA INSTÂNCIA
 $userId = $_SESSION['user_id'];
 
 try {
@@ -48,6 +50,9 @@ try {
                     break;
                 case 'get_stats':
                     $result = getEventStats($eventController, $eventId, $userId);
+                    break;
+                case 'get_image_info': // NOVA AÇÃO
+                    $result = getImageInfo($imageHandler, $eventId, $userId);
                     break;
                 default:
                     throw new Exception('Ação GET não reconhecida');
@@ -63,13 +68,19 @@ try {
                     $result = unpublishEvent($eventController, $eventId, $userId);
                     break;
                 case 'delete':
-                    $result = deleteEvent($eventController, $eventId, $userId);
+                    $result = deleteEvent($eventController, $imageHandler, $eventId, $userId); // ATUALIZADO
                     break;
                 case 'duplicate':
                     $result = duplicateEvent($eventController, $eventId, $userId);
                     break;
                 case 'update':
-                    $result = updateEvent($eventController, $eventId, $userId, $_POST);
+                    $result = updateEvent($eventController, $imageHandler, $eventId, $userId, $_POST, $_FILES); // ATUALIZADO
+                    break;
+                case 'upload_image': // NOVA AÇÃO
+                    $result = uploadEventImage($imageHandler, $eventController, $eventId, $userId, $_FILES);
+                    break;
+                case 'remove_image': // NOVA AÇÃO
+                    $result = removeEventImage($imageHandler, $eventController, $eventId, $userId);
                     break;
                 default:
                     throw new Exception('Ação POST não reconhecida');
@@ -89,7 +100,7 @@ try {
                     $result = unpublishEvent($eventController, $eventId, $userId);
                     break;
                 case 'update':
-                    $result = updateEvent($eventController, $eventId, $userId, $input);
+                    $result = updateEvent($eventController, $imageHandler, $eventId, $userId, $input, null); // ATUALIZADO
                     break;
                 default:
                     throw new Exception('Ação PUT não reconhecida');
@@ -97,7 +108,11 @@ try {
             break;
             
         case 'DELETE':
-            $result = deleteEvent($eventController, $eventId, $userId);
+            if ($action === 'image') { // NOVA AÇÃO
+                $result = removeEventImage($imageHandler, $eventController, $eventId, $userId);
+            } else {
+                $result = deleteEvent($eventController, $imageHandler, $eventId, $userId); // ATUALIZADO
+            }
             break;
             
         default:
@@ -155,9 +170,164 @@ function getEventStats($eventController, $eventId, $userId) {
 }
 
 /**
- * Atualizar evento
+ * NOVA FUNÇÃO: Obter informações da imagem do evento
  */
-function updateEvent($eventController, $eventId, $userId, $data) {
+function getImageInfo($imageHandler, $eventId, $userId) {
+    $database = Database::getInstance();
+    $conn = $database->getConnection();
+    
+    if (!$conn) {
+        return ['success' => false, 'message' => 'Erro de conexão com banco de dados'];
+    }
+    
+    try {
+        // Verificar se o usuário pode editar o evento
+        $stmt = $conn->prepare("SELECT imagem_capa FROM eventos WHERE id_evento = ? AND id_organizador = ?");
+        $stmt->execute([$eventId, $userId]);
+        $evento = $stmt->fetch();
+        
+        if (!$evento) {
+            return ['success' => false, 'message' => 'Evento não encontrado ou sem permissão'];
+        }
+        
+        if (!$evento['imagem_capa']) {
+            return ['success' => true, 'has_image' => false, 'image_info' => null];
+        }
+        
+        $imageInfo = $imageHandler->getImageInfo($evento['imagem_capa']);
+        
+        return [
+            'success' => true,
+            'has_image' => true,
+            'image_info' => $imageInfo
+        ];
+        
+    } catch (Exception $e) {
+        return ['success' => false, 'message' => 'Erro ao obter informações da imagem: ' . $e->getMessage()];
+    }
+}
+
+/**
+ * NOVA FUNÇÃO: Upload de imagem do evento
+ */
+function uploadEventImage($imageHandler, $eventController, $eventId, $userId, $files) {
+    if (!$eventController->canEdit($eventId)) {
+        return ['success' => false, 'message' => 'Você não tem permissão para editar este evento'];
+    }
+    
+    if (!isset($files['imagem_capa'])) {
+        return ['success' => false, 'message' => 'Nenhuma imagem foi enviada'];
+    }
+    
+    $database = Database::getInstance();
+    $conn = $database->getConnection();
+    
+    if (!$conn) {
+        return ['success' => false, 'message' => 'Erro de conexão com banco de dados'];
+    }
+    
+    try {
+        // Buscar imagem atual do evento
+        $stmt = $conn->prepare("SELECT imagem_capa FROM eventos WHERE id_evento = ? AND id_organizador = ?");
+        $stmt->execute([$eventId, $userId]);
+        $evento = $stmt->fetch();
+        
+        if (!$evento) {
+            return ['success' => false, 'message' => 'Evento não encontrado'];
+        }
+        
+        // Fazer upload da nova imagem
+        $uploadResult = $imageHandler->uploadImage($files['imagem_capa'], $evento['imagem_capa']);
+        
+        if (!$uploadResult['success']) {
+            return $uploadResult;
+        }
+        
+        // Atualizar banco de dados com novo nome da imagem
+        $stmt = $conn->prepare("UPDATE eventos SET imagem_capa = ?, data_atualizacao = NOW() WHERE id_evento = ?");
+        $dbResult = $stmt->execute([$uploadResult['filename'], $eventId]);
+        
+        if (!$dbResult) {
+            // Se falhou no banco, remover a imagem que foi feita upload
+            $imageHandler->deleteImage($uploadResult['filename']);
+            return ['success' => false, 'message' => 'Erro ao salvar imagem no banco de dados'];
+        }
+        
+        // Log da ação
+        error_log("Imagem do evento atualizada - Event ID: $eventId, User: $userId, Image: {$uploadResult['filename']}");
+        
+        return [
+            'success' => true,
+            'message' => 'Imagem enviada com sucesso!',
+            'image_info' => [
+                'filename' => $uploadResult['filename'],
+                'url' => $uploadResult['url'],
+                'path' => $uploadResult['path']
+            ]
+        ];
+        
+    } catch (Exception $e) {
+        return ['success' => false, 'message' => 'Erro no upload: ' . $e->getMessage()];
+    }
+}
+
+/**
+ * NOVA FUNÇÃO: Remover imagem do evento
+ */
+function removeEventImage($imageHandler, $eventController, $eventId, $userId) {
+    if (!$eventController->canEdit($eventId)) {
+        return ['success' => false, 'message' => 'Você não tem permissão para editar este evento'];
+    }
+    
+    $database = Database::getInstance();
+    $conn = $database->getConnection();
+    
+    if (!$conn) {
+        return ['success' => false, 'message' => 'Erro de conexão com banco de dados'];
+    }
+    
+    try {
+        // Buscar imagem atual do evento
+        $stmt = $conn->prepare("SELECT imagem_capa FROM eventos WHERE id_evento = ? AND id_organizador = ?");
+        $stmt->execute([$eventId, $userId]);
+        $evento = $stmt->fetch();
+        
+        if (!$evento) {
+            return ['success' => false, 'message' => 'Evento não encontrado'];
+        }
+        
+        if (!$evento['imagem_capa']) {
+            return ['success' => false, 'message' => 'Evento não possui imagem para remover'];
+        }
+        
+        // Remover do banco de dados
+        $stmt = $conn->prepare("UPDATE eventos SET imagem_capa = NULL, data_atualizacao = NOW() WHERE id_evento = ?");
+        $dbResult = $stmt->execute([$eventId]);
+        
+        if ($dbResult) {
+            // Remover arquivo físico
+            $imageHandler->deleteImage($evento['imagem_capa']);
+            
+            // Log da ação
+            error_log("Imagem do evento removida - Event ID: $eventId, User: $userId, Image: {$evento['imagem_capa']}");
+            
+            return [
+                'success' => true,
+                'message' => 'Imagem removida com sucesso!'
+            ];
+        } else {
+            return ['success' => false, 'message' => 'Erro ao remover imagem do banco de dados'];
+        }
+        
+    } catch (Exception $e) {
+        return ['success' => false, 'message' => 'Erro ao remover imagem: ' . $e->getMessage()];
+    }
+}
+
+/**
+ * Atualizar evento (ATUALIZADA COM SUPORTE A IMAGEM)
+ */
+function updateEvent($eventController, $imageHandler, $eventId, $userId, $data, $files) {
     if (!$eventController->canEdit($eventId)) {
         return ['success' => false, 'message' => 'Você não tem permissão para editar este evento'];
     }
@@ -180,18 +350,92 @@ function updateEvent($eventController, $eventId, $userId, $data) {
         return ['success' => false, 'message' => 'Preço deve ser informado para eventos pagos'];
     }
     
-    $result = $eventController->update($eventId, $data);
+    $database = Database::getInstance();
+    $conn = $database->getConnection();
     
-    if ($result['success']) {
-        // Log da ação
-        error_log("Evento atualizado - ID: $eventId, Usuário: $userId");
-        
-        // Buscar dados atualizados
-        $eventoAtualizado = $eventController->getById($eventId);
-        $result['evento'] = $eventoAtualizado;
+    if (!$conn) {
+        return ['success' => false, 'message' => 'Erro de conexão com banco de dados'];
     }
     
-    return $result;
+    try {
+        $conn->beginTransaction();
+        
+        // Buscar dados atuais do evento
+        $stmt = $conn->prepare("SELECT imagem_capa FROM eventos WHERE id_evento = ? AND id_organizador = ?");
+        $stmt->execute([$eventId, $userId]);
+        $eventoAtual = $stmt->fetch();
+        
+        if (!$eventoAtual) {
+            $conn->rollback();
+            return ['success' => false, 'message' => 'Evento não encontrado'];
+        }
+        
+        // Processar upload de nova imagem se enviada
+        $newImageName = null;
+        if ($files && isset($files['imagem_capa']) && $files['imagem_capa']['error'] !== UPLOAD_ERR_NO_FILE) {
+            $uploadResult = $imageHandler->uploadImage($files['imagem_capa'], $eventoAtual['imagem_capa']);
+            
+            if (!$uploadResult['success']) {
+                $conn->rollback();
+                return ['success' => false, 'message' => 'Erro no upload da imagem: ' . $uploadResult['message']];
+            }
+            
+            $newImageName = $uploadResult['filename'];
+            $data['imagem_capa'] = $newImageName;
+        }
+        
+        // Verificar se deve remover imagem atual
+        if (isset($data['remove_current_image']) && $data['remove_current_image'] && $eventoAtual['imagem_capa']) {
+            $imageHandler->deleteImage($eventoAtual['imagem_capa']);
+            $data['imagem_capa'] = null;
+        }
+        
+        // Atualizar evento
+        $result = $eventController->update($eventId, $data);
+        
+        if ($result['success']) {
+            $conn->commit();
+            
+            // Log da ação
+            $logMessage = "Evento atualizado - ID: $eventId, Usuário: $userId";
+            if ($newImageName) {
+                $logMessage .= ", Nova imagem: $newImageName";
+            }
+            error_log($logMessage);
+            
+            // Buscar dados atualizados
+            $eventoAtualizado = $eventController->getById($eventId);
+            $result['evento'] = $eventoAtualizado;
+            
+            if ($newImageName) {
+                $result['message'] = 'Evento e imagem atualizados com sucesso!';
+                $result['image_info'] = [
+                    'filename' => $newImageName,
+                    'url' => $imageHandler->getImageUrl($newImageName)
+                ];
+            }
+        } else {
+            $conn->rollback();
+            
+            // Se evento falhou mas imagem foi enviada, deletar imagem
+            if ($newImageName) {
+                $imageHandler->deleteImage($newImageName);
+            }
+        }
+        
+        return $result;
+        
+    } catch (Exception $e) {
+        $conn->rollback();
+        
+        // Limpar imagem se foi enviada
+        if ($newImageName) {
+            $imageHandler->deleteImage($newImageName);
+        }
+        
+        error_log("Erro ao atualizar evento: " . $e->getMessage());
+        return ['success' => false, 'message' => 'Erro interno: ' . $e->getMessage()];
+    }
 }
 
 /**
@@ -317,9 +561,9 @@ function unpublishEvent($eventController, $eventId, $userId) {
 }
 
 /**
- * Excluir evento
+ * Excluir evento (ATUALIZADA COM REMOÇÃO DE IMAGEM)
  */
-function deleteEvent($eventController, $eventId, $userId) {
+function deleteEvent($eventController, $imageHandler, $eventId, $userId) {
     if (!$eventController->canEdit($eventId)) {
         return ['success' => false, 'message' => 'Você não tem permissão para excluir este evento'];
     }
@@ -334,8 +578,8 @@ function deleteEvent($eventController, $eventId, $userId) {
     try {
         $conn->beginTransaction();
         
-        // Verificar se o evento existe
-        $stmt = $conn->prepare("SELECT titulo, status FROM eventos WHERE id_evento = ? AND id_organizador = ?");
+        // Verificar se o evento existe e buscar imagem
+        $stmt = $conn->prepare("SELECT titulo, status, imagem_capa FROM eventos WHERE id_evento = ? AND id_organizador = ?");
         $stmt->execute([$eventId, $userId]);
         $evento = $stmt->fetch();
         
@@ -371,9 +615,13 @@ function deleteEvent($eventController, $eventId, $userId) {
         $stmt = $conn->prepare("DELETE FROM notificacoes WHERE id_referencia = ? AND tipo = 'evento'");
         $stmt->execute([$eventId]);
         
-        // 4. Excluir logs do evento
-        $stmt = $conn->prepare("DELETE FROM event_logs WHERE id_evento = ?");
-        $stmt->execute([$eventId]);
+        // 4. Excluir logs do evento (se a tabela existir)
+        try {
+            $stmt = $conn->prepare("DELETE FROM event_logs WHERE id_evento = ?");
+            $stmt->execute([$eventId]);
+        } catch (Exception $e) {
+            // Tabela pode não existir, continuar
+        }
         
         // 5. Finalmente, excluir o evento
         $stmt = $conn->prepare("DELETE FROM eventos WHERE id_evento = ?");
@@ -381,6 +629,12 @@ function deleteEvent($eventController, $eventId, $userId) {
         
         if ($result) {
             $conn->commit();
+            
+            // Remover imagem se existir
+            if ($evento['imagem_capa']) {
+                $imageHandler->deleteImage($evento['imagem_capa']);
+                error_log("Imagem do evento excluído removida: {$evento['imagem_capa']}");
+            }
             
             // Log da ação
             error_log("Evento excluído - ID: $eventId, Título: {$evento['titulo']}, Organizador: $userId");
@@ -441,6 +695,9 @@ function duplicateEvent($eventController, $eventId, $userId) {
         $evento['data_inicio'] = date('Y-m-d', strtotime($evento['data_inicio'] . ' +1 week'));
         $evento['data_fim'] = date('Y-m-d', strtotime($evento['data_fim'] . ' +1 week'));
         
+        // Remover referência à imagem (não duplicar imagem)
+        $evento['imagem_capa'] = null;
+        
         // Inserir evento duplicado
         $campos = array_keys($evento);
         $placeholders = ':' . implode(', :', $campos);
@@ -457,7 +714,7 @@ function duplicateEvent($eventController, $eventId, $userId) {
             
             return [
                 'success' => true,
-                'message' => 'Evento duplicado com sucesso!',
+                'message' => 'Evento duplicado com sucesso! A imagem não foi copiada.',
                 'new_event_id' => $newEventId,
                 'new_event_title' => $evento['titulo']
             ];
