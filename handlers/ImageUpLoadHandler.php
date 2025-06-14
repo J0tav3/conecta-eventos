@@ -5,480 +5,437 @@
 // ==========================================
 
 class ImageUploadHandler {
+    
     private $uploadDir;
     private $allowedTypes;
-    private $maxFileSize;
-    private $debug = true;
+    private $maxSize;
+    private $maxWidth;
+    private $maxHeight;
     
     public function __construct() {
-        // Diretório de upload - ajustado para Railway
-        $this->uploadDir = __DIR__ . '/../uploads/eventos/';
+        // Diretório de upload
+        $this->uploadDir = __DIR__ . '/../uploads/events/';
         
         // Tipos permitidos
-        $this->allowedTypes = ['jpg', 'jpeg', 'png', 'gif', 'webp'];
+        $this->allowedTypes = [
+            'image/jpeg',
+            'image/jpg', 
+            'image/png',
+            'image/gif',
+            'image/webp'
+        ];
         
         // Tamanho máximo: 5MB
-        $this->maxFileSize = 5 * 1024 * 1024;
+        $this->maxSize = 5 * 1024 * 1024;
+        
+        // Dimensões máximas para redimensionamento
+        $this->maxWidth = 1920;
+        $this->maxHeight = 1080;
         
         // Criar diretório se não existir
-        $this->ensureUploadDirectory();
+        $this->createUploadDirectory();
     }
     
     /**
-     * Garantir que o diretório de upload existe
+     * Criar diretório de upload se não existir
      */
-    private function ensureUploadDirectory() {
+    private function createUploadDirectory() {
         if (!file_exists($this->uploadDir)) {
-            $created = mkdir($this->uploadDir, 0755, true);
-            if ($created) {
-                $this->log("Diretório de upload criado: " . $this->uploadDir);
-                
-                // Criar .htaccess para segurança
-                $this->createHtaccess();
-                
-                // Criar index.php para proteção
-                $this->createIndexProtection();
-            } else {
-                $this->log("ERRO: Falha ao criar diretório de upload");
+            if (!mkdir($this->uploadDir, 0755, true)) {
+                throw new Exception("Não foi possível criar o diretório de upload");
             }
         }
-    }
-    
-    /**
-     * Criar arquivo .htaccess para segurança
-     */
-    private function createHtaccess() {
-        $htaccessPath = $this->uploadDir . '.htaccess';
-        if (!file_exists($htaccessPath)) {
-            $htaccessContent = "# Impedir execução de scripts\n";
-            $htaccessContent .= "php_flag engine off\n";
-            $htaccessContent .= "AddType text/plain .php .php3 .phtml .pht\n";
-            $htaccessContent .= "\n# Apenas imagens\n";
-            $htaccessContent .= "<Files ~ \"\\.(php|php3|phtml|pht|jsp|asp|aspx|cgi|pl)$\">\n";
-            $htaccessContent .= "    Order allow,deny\n";
-            $htaccessContent .= "    Deny from all\n";
-            $htaccessContent .= "</Files>\n";
+        
+        // Criar arquivo .htaccess para segurança
+        $htaccessFile = $this->uploadDir . '.htaccess';
+        if (!file_exists($htaccessFile)) {
+            $htaccessContent = "# Bloquear execução de scripts\n";
+            $htaccessContent .= "Options -ExecCGI\n";
+            $htaccessContent .= "AddHandler cgi-script .php .pl .py .jsp .asp .sh .cgi\n";
+            $htaccessContent .= "# Permitir apenas imagens\n";
+            $htaccessContent .= "<FilesMatch \"\\.(jpg|jpeg|png|gif|webp)$\">\n";
+            $htaccessContent .= "    Require all granted\n";
+            $htaccessContent .= "</FilesMatch>\n";
+            $htaccessContent .= "<FilesMatch \"\\.(php|pl|py|jsp|asp|sh|cgi)$\">\n";
+            $htaccessContent .= "    Require all denied\n";
+            $htaccessContent .= "</FilesMatch>\n";
             
-            file_put_contents($htaccessPath, $htaccessContent);
-            $this->log("Arquivo .htaccess criado para segurança");
+            file_put_contents($htaccessFile, $htaccessContent);
         }
     }
     
     /**
-     * Criar index.php para proteção do diretório
+     * Fazer upload de uma imagem
+     * 
+     * @param array $file Arquivo $_FILES
+     * @return array Resultado do upload
      */
-    private function createIndexProtection() {
-        $indexPath = $this->uploadDir . 'index.php';
-        if (!file_exists($indexPath)) {
-            $indexContent = "<?php\n";
-            $indexContent .= "// Proteção do diretório\n";
-            $indexContent .= "header('HTTP/1.0 403 Forbidden');\n";
-            $indexContent .= "exit('Acesso negado.');\n";
-            $indexContent .= "?>";
-            
-            file_put_contents($indexPath, $indexContent);
-            $this->log("Arquivo index.php de proteção criado");
-        }
-    }
-    
-    /**
-     * Processar upload de imagem
-     */
-    public function uploadImage($fileArray, $oldImageName = null) {
+    public function uploadImage($file) {
         try {
-            // Verificar se arquivo foi enviado
-            if (!isset($fileArray) || $fileArray['error'] !== UPLOAD_ERR_OK) {
-                return [
-                    'success' => false,
-                    'message' => $this->getUploadErrorMessage($fileArray['error'] ?? UPLOAD_ERR_NO_FILE),
-                    'filename' => null
-                ];
-            }
-            
-            $this->log("Iniciando upload de imagem");
-            
-            // Informações do arquivo
-            $originalName = $fileArray['name'];
-            $tmpName = $fileArray['tmp_name'];
-            $fileSize = $fileArray['size'];
-            
-            $this->log("Arquivo: $originalName, Tamanho: $fileSize bytes");
-            
             // Validar arquivo
-            $validation = $this->validateFile($originalName, $fileSize, $tmpName);
+            $validation = $this->validateFile($file);
             if (!$validation['valid']) {
                 return [
                     'success' => false,
-                    'message' => $validation['message'],
-                    'filename' => null
+                    'message' => $validation['message']
                 ];
             }
             
-            // Gerar nome único para o arquivo
-            $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
-            $newFileName = $this->generateUniqueFileName($extension);
-            $targetPath = $this->uploadDir . $newFileName;
+            // Gerar nome único
+            $filename = $this->generateUniqueFilename($file['name']);
+            $targetPath = $this->uploadDir . $filename;
             
-            $this->log("Novo nome do arquivo: $newFileName");
-            
-            // Mover arquivo para diretório de destino
-            if (move_uploaded_file($tmpName, $targetPath)) {
-                $this->log("Upload realizado com sucesso: $targetPath");
-                
-                // Remover imagem antiga se especificada
-                if ($oldImageName && $oldImageName !== $newFileName) {
-                    $this->deleteImage($oldImageName);
-                }
-                
-                // Redimensionar imagem se necessário
-                $this->resizeImage($targetPath);
-                
-                return [
-                    'success' => true,
-                    'message' => 'Imagem enviada com sucesso!',
-                    'filename' => $newFileName,
-                    'path' => $targetPath,
-                    'url' => $this->getImageUrl($newFileName)
-                ];
-            } else {
-                $this->log("ERRO: Falha ao mover arquivo para $targetPath");
+            // Mover arquivo temporário
+            if (!move_uploaded_file($file['tmp_name'], $targetPath)) {
                 return [
                     'success' => false,
-                    'message' => 'Erro ao salvar a imagem no servidor.',
-                    'filename' => null
+                    'message' => 'Erro ao mover arquivo para destino'
                 ];
             }
             
+            // Redimensionar se necessário
+            $this->resizeImageIfNeeded($targetPath);
+            
+            // Otimizar qualidade
+            $this->optimizeImage($targetPath);
+            
+            return [
+                'success' => true,
+                'message' => 'Imagem enviada com sucesso',
+                'filename' => $filename,
+                'path' => $targetPath,
+                'url' => '/uploads/events/' . $filename,
+                'size' => filesize($targetPath)
+            ];
+            
         } catch (Exception $e) {
-            $this->log("Exception no upload: " . $e->getMessage());
+            error_log("Erro no upload de imagem: " . $e->getMessage());
             return [
                 'success' => false,
-                'message' => 'Erro interno no upload: ' . $e->getMessage(),
-                'filename' => null
+                'message' => 'Erro interno no upload: ' . $e->getMessage()
             ];
         }
     }
     
     /**
-     * Validar arquivo enviado
+     * Validar arquivo de upload
+     * 
+     * @param array $file
+     * @return array
      */
-    private function validateFile($fileName, $fileSize, $tmpName) {
-        // Verificar extensão
-        $extension = strtolower(pathinfo($fileName, PATHINFO_EXTENSION));
-        if (!in_array($extension, $this->allowedTypes)) {
+    private function validateFile($file) {
+        // Verificar se houve erro no upload
+        if ($file['error'] !== UPLOAD_ERR_OK) {
+            $errorMessages = [
+                UPLOAD_ERR_INI_SIZE => 'Arquivo muito grande (limite do servidor)',
+                UPLOAD_ERR_FORM_SIZE => 'Arquivo muito grande (limite do formulário)',
+                UPLOAD_ERR_PARTIAL => 'Upload incompleto',
+                UPLOAD_ERR_NO_FILE => 'Nenhum arquivo enviado',
+                UPLOAD_ERR_NO_TMP_DIR => 'Diretório temporário não encontrado',
+                UPLOAD_ERR_CANT_WRITE => 'Erro de escrita no disco',
+                UPLOAD_ERR_EXTENSION => 'Upload bloqueado por extensão'
+            ];
+            
             return [
                 'valid' => false,
-                'message' => 'Tipo de arquivo não permitido. Use: ' . implode(', ', $this->allowedTypes)
+                'message' => $errorMessages[$file['error']] ?? 'Erro desconhecido no upload'
             ];
         }
         
         // Verificar tamanho
-        if ($fileSize > $this->maxFileSize) {
-            $maxSizeMB = $this->maxFileSize / (1024 * 1024);
+        if ($file['size'] > $this->maxSize) {
             return [
                 'valid' => false,
-                'message' => "Arquivo muito grande. Tamanho máximo: {$maxSizeMB}MB"
+                'message' => 'Arquivo muito grande. Máximo: ' . $this->formatFileSize($this->maxSize)
+            ];
+        }
+        
+        // Verificar tipo MIME
+        $finfo = new finfo(FILEINFO_MIME_TYPE);
+        $mimeType = $finfo->file($file['tmp_name']);
+        
+        if (!in_array($mimeType, $this->allowedTypes)) {
+            return [
+                'valid' => false,
+                'message' => 'Tipo de arquivo não permitido. Use: JPG, PNG, GIF ou WebP'
             ];
         }
         
         // Verificar se é realmente uma imagem
-        $imageInfo = @getimagesize($tmpName);
+        $imageInfo = getimagesize($file['tmp_name']);
         if ($imageInfo === false) {
             return [
                 'valid' => false,
-                'message' => 'O arquivo enviado não é uma imagem válida.'
+                'message' => 'Arquivo não é uma imagem válida'
             ];
         }
         
-        // Verificar MIME type
-        $allowedMimes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-        if (!in_array($imageInfo['mime'], $allowedMimes)) {
+        // Verificar dimensões mínimas
+        if ($imageInfo[0] < 100 || $imageInfo[1] < 100) {
             return [
                 'valid' => false,
-                'message' => 'Tipo MIME não permitido.'
-            ];
-        }
-        
-        return ['valid' => true, 'message' => 'Arquivo válido'];
-    }
-    
-    /**
-     * Gerar nome único para arquivo
-     */
-    private function generateUniqueFileName($extension) {
-        $timestamp = time();
-        $random = mt_rand(100000, 999999);
-        return "evento_{$timestamp}_{$random}.{$extension}";
-    }
-    
-    /**
-     * Redimensionar imagem para otimização
-     */
-    private function resizeImage($imagePath) {
-        try {
-            // Verificar se extensão GD está disponível
-            if (!extension_loaded('gd')) {
-                $this->log("Extensão GD não disponível - pulando redimensionamento");
-                return;
-            }
-            
-            $imageInfo = getimagesize($imagePath);
-            if (!$imageInfo) {
-                $this->log("Não foi possível obter informações da imagem");
-                return;
-            }
-            
-            $width = $imageInfo[0];
-            $height = $imageInfo[1];
-            $type = $imageInfo[2];
-            
-            // Se a imagem for muito grande, redimensionar
-            $maxWidth = 1200;
-            $maxHeight = 800;
-            
-            if ($width > $maxWidth || $height > $maxHeight) {
-                // Calcular proporções
-                $ratio = min($maxWidth / $width, $maxHeight / $height);
-                $newWidth = intval($width * $ratio);
-                $newHeight = intval($height * $ratio);
-                
-                // Criar imagem baseada no tipo
-                $sourceImage = null;
-                switch ($type) {
-                    case IMAGETYPE_JPEG:
-                        $sourceImage = @imagecreatefromjpeg($imagePath);
-                        break;
-                    case IMAGETYPE_PNG:
-                        $sourceImage = @imagecreatefrompng($imagePath);
-                        break;
-                    case IMAGETYPE_GIF:
-                        $sourceImage = @imagecreatefromgif($imagePath);
-                        break;
-                    case IMAGETYPE_WEBP:
-                        if (function_exists('imagecreatefromwebp')) {
-                            $sourceImage = @imagecreatefromwebp($imagePath);
-                        }
-                        break;
-                }
-                
-                if (!$sourceImage) {
-                    $this->log("Não foi possível criar imagem fonte para redimensionamento");
-                    return;
-                }
-                
-                // Criar nova imagem redimensionada
-                $destImage = imagecreatetruecolor($newWidth, $newHeight);
-                
-                // Preservar transparência para PNG
-                if ($type == IMAGETYPE_PNG) {
-                    imagealphablending($destImage, false);
-                    imagesavealpha($destImage, true);
-                    $transparent = imagecolorallocatealpha($destImage, 255, 255, 255, 127);
-                    imagefilledrectangle($destImage, 0, 0, $newWidth, $newHeight, $transparent);
-                }
-                
-                // Redimensionar
-                if (imagecopyresampled($destImage, $sourceImage, 0, 0, 0, 0, $newWidth, $newHeight, $width, $height)) {
-                    // Salvar imagem redimensionada
-                    $saved = false;
-                    switch ($type) {
-                        case IMAGETYPE_JPEG:
-                            $saved = imagejpeg($destImage, $imagePath, 85);
-                            break;
-                        case IMAGETYPE_PNG:
-                            $saved = imagepng($destImage, $imagePath, 8);
-                            break;
-                        case IMAGETYPE_GIF:
-                            $saved = imagegif($destImage, $imagePath);
-                            break;
-                        case IMAGETYPE_WEBP:
-                            if (function_exists('imagewebp')) {
-                                $saved = imagewebp($destImage, $imagePath, 85);
-                            }
-                            break;
-                    }
-                    
-                    if ($saved) {
-                        $this->log("Imagem redimensionada de {$width}x{$height} para {$newWidth}x{$newHeight}");
-                    }
-                }
-                
-                // Limpar memória
-                imagedestroy($sourceImage);
-                imagedestroy($destImage);
-            }
-            
-        } catch (Exception $e) {
-            $this->log("Erro ao redimensionar imagem: " . $e->getMessage());
-            // Não falhar o upload por causa do redimensionamento
-        }
-    }
-    
-    /**
-     * Obter URL da imagem
-     */
-    public function getImageUrl($fileName) {
-        if (!$fileName) return null;
-        
-        $baseUrl = 'https://conecta-eventos-production.up.railway.app';
-        return $baseUrl . '/uploads/eventos/' . $fileName;
-    }
-    
-    /**
-     * Deletar imagem
-     */
-    public function deleteImage($fileName) {
-        if (!$fileName) return true;
-        
-        $filePath = $this->uploadDir . $fileName;
-        if (file_exists($filePath)) {
-            $deleted = unlink($filePath);
-            $this->log($deleted ? "Imagem deletada: $fileName" : "Falha ao deletar: $fileName");
-            return $deleted;
-        }
-        
-        $this->log("Arquivo não existe para deletar: $fileName");
-        return true; // Arquivo não existe, considerar como "deletado"
-    }
-    
-    /**
-     * Verificar se imagem existe
-     */
-    public function imageExists($fileName) {
-        if (!$fileName) return false;
-        return file_exists($this->uploadDir . $fileName);
-    }
-    
-    /**
-     * Obter informações da imagem
-     */
-    public function getImageInfo($fileName) {
-        if (!$fileName || !$this->imageExists($fileName)) {
-            return null;
-        }
-        
-        $filePath = $this->uploadDir . $fileName;
-        $imageInfo = @getimagesize($filePath);
-        $fileSize = filesize($filePath);
-        
-        if (!$imageInfo) {
-            return [
-                'filename' => $fileName,
-                'path' => $filePath,
-                'url' => $this->getImageUrl($fileName),
-                'size' => $fileSize,
-                'size_formatted' => $this->formatFileSize($fileSize),
-                'error' => 'Não foi possível obter informações da imagem'
+                'message' => 'Imagem muito pequena. Mínimo: 100x100 pixels'
             ];
         }
         
         return [
-            'filename' => $fileName,
-            'path' => $filePath,
-            'url' => $this->getImageUrl($fileName),
-            'width' => $imageInfo[0],
-            'height' => $imageInfo[1],
-            'type' => $imageInfo['mime'],
-            'size' => $fileSize,
-            'size_formatted' => $this->formatFileSize($fileSize)
+            'valid' => true,
+            'message' => 'Arquivo válido'
         ];
     }
     
     /**
-     * Formatar tamanho do arquivo
+     * Gerar nome único para arquivo
+     * 
+     * @param string $originalName
+     * @return string
+     */
+    private function generateUniqueFilename($originalName) {
+        $extension = strtolower(pathinfo($originalName, PATHINFO_EXTENSION));
+        $baseName = 'evento_' . date('Y-m-d_H-i-s') . '_' . uniqid();
+        return $baseName . '.' . $extension;
+    }
+    
+    /**
+     * Redimensionar imagem se exceder dimensões máximas
+     * 
+     * @param string $imagePath
+     */
+    private function resizeImageIfNeeded($imagePath) {
+        $imageInfo = getimagesize($imagePath);
+        if (!$imageInfo) return;
+        
+        $width = $imageInfo[0];
+        $height = $imageInfo[1];
+        $type = $imageInfo[2];
+        
+        // Verificar se precisa redimensionar
+        if ($width <= $this->maxWidth && $height <= $this->maxHeight) {
+            return; // Não precisa redimensionar
+        }
+        
+        // Calcular novas dimensões mantendo proporção
+        $ratio = min($this->maxWidth / $width, $this->maxHeight / $height);
+        $newWidth = round($width * $ratio);
+        $newHeight = round($height * $ratio);
+        
+        // Criar imagem source
+        switch ($type) {
+            case IMAGETYPE_JPEG:
+                $source = imagecreatefromjpeg($imagePath);
+                break;
+            case IMAGETYPE_PNG:
+                $source = imagecreatefrompng($imagePath);
+                break;
+            case IMAGETYPE_GIF:
+                $source = imagecreatefromgif($imagePath);
+                break;
+            case IMAGETYPE_WEBP:
+                $source = imagecreatefromwebp($imagePath);
+                break;
+            default:
+                return; // Tipo não suportado
+        }
+        
+        if (!$source) return;
+        
+        // Criar imagem de destino
+        $destination = imagecreatetruecolor($newWidth, $newHeight);
+        
+        // Preservar transparência para PNG e GIF
+        if ($type == IMAGETYPE_PNG || $type == IMAGETYPE_GIF) {
+            imagecolortransparent($destination, imagecolorallocatealpha($destination, 0, 0, 0, 127));
+            imagealphablending($destination, false);
+            imagesavealpha($destination, true);
+        }
+        
+        // Redimensionar
+        imagecopyresampled(
+            $destination, $source,
+            0, 0, 0, 0,
+            $newWidth, $newHeight,
+            $width, $height
+        );
+        
+        // Salvar imagem redimensionada
+        switch ($type) {
+            case IMAGETYPE_JPEG:
+                imagejpeg($destination, $imagePath, 85);
+                break;
+            case IMAGETYPE_PNG:
+                imagepng($destination, $imagePath, 6);
+                break;
+            case IMAGETYPE_GIF:
+                imagegif($destination, $imagePath);
+                break;
+            case IMAGETYPE_WEBP:
+                imagewebp($destination, $imagePath, 85);
+                break;
+        }
+        
+        // Limpar memória
+        imagedestroy($source);
+        imagedestroy($destination);
+    }
+    
+    /**
+     * Otimizar qualidade da imagem
+     * 
+     * @param string $imagePath
+     */
+    private function optimizeImage($imagePath) {
+        $imageInfo = getimagesize($imagePath);
+        if (!$imageInfo) return;
+        
+        $type = $imageInfo[2];
+        
+        // Otimizar apenas JPEG e WebP
+        if ($type !== IMAGETYPE_JPEG && $type !== IMAGETYPE_WEBP) {
+            return;
+        }
+        
+        // Carregar imagem
+        $image = null;
+        switch ($type) {
+            case IMAGETYPE_JPEG:
+                $image = imagecreatefromjpeg($imagePath);
+                break;
+            case IMAGETYPE_WEBP:
+                $image = imagecreatefromwebp($imagePath);
+                break;
+        }
+        
+        if (!$image) return;
+        
+        // Salvar com qualidade otimizada
+        switch ($type) {
+            case IMAGETYPE_JPEG:
+                imagejpeg($image, $imagePath, 80); // Qualidade 80%
+                break;
+            case IMAGETYPE_WEBP:
+                imagewebp($image, $imagePath, 80); // Qualidade 80%
+                break;
+        }
+        
+        imagedestroy($image);
+    }
+    
+    /**
+     * Deletar uma imagem
+     * 
+     * @param string $filename
+     * @return bool
+     */
+    public function deleteImage($filename) {
+        try {
+            $filePath = $this->uploadDir . $filename;
+            
+            if (file_exists($filePath)) {
+                return unlink($filePath);
+            }
+            
+            return true; // Arquivo já não existe
+            
+        } catch (Exception $e) {
+            error_log("Erro ao deletar imagem: " . $e->getMessage());
+            return false;
+        }
+    }
+    
+    /**
+     * Obter URL pública da imagem
+     * 
+     * @param string $filename
+     * @return string
+     */
+    public function getImageUrl($filename) {
+        if (empty($filename)) {
+            return '/assets/images/event-placeholder.jpg'; // Imagem padrão
+        }
+        
+        return '/uploads/events/' . $filename;
+    }
+    
+    /**
+     * Verificar se arquivo de imagem existe
+     * 
+     * @param string $filename
+     * @return bool
+     */
+    public function imageExists($filename) {
+        if (empty($filename)) return false;
+        
+        $filePath = $this->uploadDir . $filename;
+        return file_exists($filePath);
+    }
+    
+    /**
+     * Obter informações de uma imagem
+     * 
+     * @param string $filename
+     * @return array|null
+     */
+    public function getImageInfo($filename) {
+        if (!$this->imageExists($filename)) {
+            return null;
+        }
+        
+        $filePath = $this->uploadDir . $filename;
+        $imageInfo = getimagesize($filePath);
+        
+        if (!$imageInfo) return null;
+        
+        return [
+            'width' => $imageInfo[0],
+            'height' => $imageInfo[1],
+            'type' => $imageInfo[2],
+            'mime' => $imageInfo['mime'],
+            'size' => filesize($filePath),
+            'url' => $this->getImageUrl($filename)
+        ];
+    }
+    
+    /**
+     * Formatar tamanho de arquivo
+     * 
+     * @param int $bytes
+     * @return string
      */
     private function formatFileSize($bytes) {
         if ($bytes >= 1048576) {
-            return round($bytes / 1048576, 2) . ' MB';
+            return number_format($bytes / 1048576, 2) . ' MB';
         } elseif ($bytes >= 1024) {
-            return round($bytes / 1024, 2) . ' KB';
+            return number_format($bytes / 1024, 2) . ' KB';
         } else {
             return $bytes . ' B';
         }
     }
     
     /**
-     * Obter mensagem de erro de upload
-     */
-    private function getUploadErrorMessage($errorCode) {
-        switch ($errorCode) {
-            case UPLOAD_ERR_OK:
-                return 'Upload realizado com sucesso';
-            case UPLOAD_ERR_INI_SIZE:
-                return 'Arquivo excede o tamanho máximo permitido pelo servidor';
-            case UPLOAD_ERR_FORM_SIZE:
-                return 'Arquivo excede o tamanho máximo permitido pelo formulário';
-            case UPLOAD_ERR_PARTIAL:
-                return 'Upload foi parcialmente realizado';
-            case UPLOAD_ERR_NO_FILE:
-                return 'Nenhum arquivo foi enviado';
-            case UPLOAD_ERR_NO_TMP_DIR:
-                return 'Diretório temporário não encontrado';
-            case UPLOAD_ERR_CANT_WRITE:
-                return 'Falha ao escrever arquivo no disco';
-            case UPLOAD_ERR_EXTENSION:
-                return 'Upload interrompido por extensão PHP';
-            default:
-                return 'Erro desconhecido no upload';
-        }
-    }
-    
-    /**
-     * Log de debug
-     */
-    private function log($message) {
-        if ($this->debug) {
-            error_log("[ImageUploadHandler] " . $message);
-        }
-    }
-    
-    /**
-     * Limpar uploads antigos (manutenção)
+     * Limpar uploads antigos (opcional - para manutenção)
+     * 
+     * @param int $daysOld Arquivos mais antigos que X dias
+     * @return int Número de arquivos removidos
      */
     public function cleanOldUploads($daysOld = 30) {
+        $removed = 0;
         $cutoffTime = time() - ($daysOld * 24 * 60 * 60);
-        $files = glob($this->uploadDir . '*');
-        $deletedCount = 0;
         
-        foreach ($files as $file) {
-            if (is_file($file) && filemtime($file) < $cutoffTime) {
-                // Não deletar arquivos de proteção
-                $fileName = basename($file);
-                if (!in_array($fileName, ['.htaccess', 'index.php'])) {
+        try {
+            $files = glob($this->uploadDir . '*.{jpg,jpeg,png,gif,webp}', GLOB_BRACE);
+            
+            foreach ($files as $file) {
+                if (filemtime($file) < $cutoffTime) {
                     if (unlink($file)) {
-                        $deletedCount++;
+                        $removed++;
                     }
                 }
             }
+            
+        } catch (Exception $e) {
+            error_log("Erro ao limpar uploads antigos: " . $e->getMessage());
         }
         
-        $this->log("Limpeza realizada: $deletedCount arquivos antigos removidos");
-        return $deletedCount;
-    }
-    
-    /**
-     * Obter estatísticas do diretório de upload
-     */
-    public function getUploadStats() {
-        $files = glob($this->uploadDir . '*.{jpg,jpeg,png,gif,webp}', GLOB_BRACE);
-        $totalFiles = count($files);
-        $totalSize = 0;
-        
-        foreach ($files as $file) {
-            if (is_file($file)) {
-                $totalSize += filesize($file);
-            }
-        }
-        
-        return [
-            'total_files' => $totalFiles,
-            'total_size' => $totalSize,
-            'total_size_formatted' => $this->formatFileSize($totalSize),
-            'upload_dir' => $this->uploadDir,
-            'max_file_size' => $this->maxFileSize,
-            'max_file_size_formatted' => $this->formatFileSize($this->maxFileSize),
-            'allowed_types' => $this->allowedTypes
-        ];
+        return $removed;
     }
 }
-?>
