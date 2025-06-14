@@ -1,23 +1,26 @@
 <?php
 // ==========================================
-// CONFIGURAÇÕES GERAIS - VERSÃO LIMPA
+// CONFIGURAÇÕES GERAIS - VERSÃO RAILWAY CORRIGIDA
 // Local: config/config.php
 // ==========================================
+
+// Verificar se sessão já foi iniciada antes de configurar
+if (session_status() === PHP_SESSION_NONE) {
+    // Configurações de sessão só se não houver sessão ativa
+    ini_set('session.cookie_lifetime', 86400); // 24 horas
+    ini_set('session.gc_maxlifetime', 86400);
+    ini_set('session.cookie_secure', 0); // Para desenvolvimento local
+    ini_set('session.cookie_httponly', 1);
+    ini_set('session.use_strict_mode', 1);
+}
 
 // Configuração de timezone
 date_default_timezone_set('America/Sao_Paulo');
 
-// Configurações de erro para desenvolvimento
+// Configurações de erro para produção (Railway)
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', 0); // Desabilitar para produção
 ini_set('log_errors', 1);
-
-// Configurações de sessão
-ini_set('session.cookie_lifetime', 86400); // 24 horas
-ini_set('session.gc_maxlifetime', 86400);
-ini_set('session.cookie_secure', 0); // Para desenvolvimento local
-ini_set('session.cookie_httponly', 1);
-ini_set('session.use_strict_mode', 1);
 
 // Configurações de upload
 ini_set('upload_max_filesize', '5M');
@@ -119,23 +122,25 @@ function isHttps() {
 }
 
 /**
- * Headers de segurança
+ * Headers de segurança - só aplicar se headers ainda não foram enviados
  */
 function setSecurityHeaders() {
-    // Prevenir clickjacking
-    header('X-Frame-Options: DENY');
-    
-    // Prevenir MIME sniffing
-    header('X-Content-Type-Options: nosniff');
-    
-    // XSS Protection
-    header('X-XSS-Protection: 1; mode=block');
-    
-    // Referrer Policy
-    header('Referrer-Policy: strict-origin-when-cross-origin');
-    
-    // Content Security Policy básico
-    header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; img-src 'self' data: https:; font-src 'self' https://cdnjs.cloudflare.com;");
+    if (!headers_sent()) {
+        // Prevenir clickjacking
+        header('X-Frame-Options: DENY');
+        
+        // Prevenir MIME sniffing
+        header('X-Content-Type-Options: nosniff');
+        
+        // XSS Protection
+        header('X-XSS-Protection: 1; mode=block');
+        
+        // Referrer Policy
+        header('Referrer-Policy: strict-origin-when-cross-origin');
+        
+        // Content Security Policy básico
+        header("Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://cdnjs.cloudflare.com; img-src 'self' data: https:; font-src 'self' https://cdnjs.cloudflare.com;");
+    }
 }
 
 // Criar diretórios necessários
@@ -143,7 +148,7 @@ ensureDirectoryExists(UPLOAD_PATH);
 ensureDirectoryExists(PROFILE_UPLOAD_PATH);
 ensureDirectoryExists(EVENT_UPLOAD_PATH);
 
-// Aplicar headers de segurança
+// Aplicar headers de segurança (só se headers ainda não foram enviados)
 setSecurityHeaders();
 
 // Log de inicialização
@@ -151,6 +156,7 @@ debugLog("Aplicação inicializada", [
     'timestamp' => date('Y-m-d H:i:s'),
     'base_url' => BASE_URL,
     'php_version' => PHP_VERSION,
-    'server' => $_SERVER['SERVER_SOFTWARE'] ?? 'unknown'
+    'server' => $_SERVER['SERVER_SOFTWARE'] ?? 'unknown',
+    'environment' => 'production'
 ]);
 ?>
