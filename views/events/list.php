@@ -816,5 +816,14 @@ $total_participantes = array_sum(array_column($meus_eventos, 'total_inscritos'))
             document.head.appendChild(style);
         }
     </script>
+ <!-- Fix Urgente para Dropdown de Ações -->
+<style>
+.event-card { 
+    position: relative !important; 
+    z-index: 1 !important; 
+    overflow: visible !important;
+}
+
+.event-card .dropdown-menu {   
 </body>
 </html>
