@@ -1,4 +1,124 @@
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<?php
+// ==========================================
+// CRIAR NOVO EVENTO - VERSÃO COM UPLOAD DE IMAGEM
+// Local: views/events/create.php
+// ==========================================
+
+session_start();
+
+// Verificar se está logado e é organizador
+if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
+    header("Location: ../auth/login.php");
+    exit;
+}
+
+if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'organizador') {
+    header("Location: ../dashboard/participant.php");
+    exit;
+}
+
+$title = "Criar Evento - Conecta Eventos";
+$userName = $_SESSION['user_name'] ?? 'Organizador';
+
+// URLs
+$dashboardUrl = '../dashboard/organizer.php';
+$homeUrl = '../../index.php';
+
+$success_message = '';
+$error_message = '';
+
+// Processar formulário
+if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+    try {
+        // Carregar dependências necessárias
+        require_once '../../config/config.php';
+        require_once '../../includes/session.php';
+        require_once '../../controllers/EventController.php';
+        
+        $eventController = new EventController();
+        $imageResult = null;
+        
+        // Processar upload de imagem se enviada E se handler existir
+        if (isset($_FILES['imagem_capa']) && $_FILES['imagem_capa']['error'] !== UPLOAD_ERR_NO_FILE) {
+            if (file_exists('../../handlers/ImageUploadHandler.php')) {
+                require_once '../../handlers/ImageUploadHandler.php';
+                $imageHandler = new ImageUploadHandler();
+                
+                $imageResult = $imageHandler->uploadImage($_FILES['imagem_capa']);
+                
+                if (!$imageResult['success']) {
+                    $error_message = "Erro no upload da imagem: " . $imageResult['message'];
+                }
+            } else {
+                // Se não tem handler, ignorar upload silenciosamente
+                error_log("ImageUploadHandler não encontrado - ignorando upload de imagem");
+            }
+        }
+        
+        // Se não houve erro na imagem, criar evento
+        if (!$error_message) {
+            // Adicionar nome da imagem aos dados se upload foi bem-sucedido
+            if ($imageResult && $imageResult['success']) {
+                $_POST['imagem_capa'] = $imageResult['filename'];
+            }
+            
+            $result = $eventController->create($_POST);
+            
+            if ($result['success']) {
+                $success_message = $result['message'];
+                // Limpar dados do formulário após sucesso
+                $_POST = [];
+            } else {
+                $error_message = $result['message'];
+                
+                // Se evento falhou mas imagem foi enviada, deletar imagem
+                if (isset($imageHandler) && $imageResult && $imageResult['success']) {
+                    $imageHandler->deleteImage($imageResult['filename']);
+                }
+            }
+        }
+        
+    } catch (Exception $e) {
+        error_log("Erro ao criar evento: " . $e->getMessage());
+        $error_message = "Erro interno do sistema. Tente novamente.";
+        
+        // Deletar imagem se foi enviada
+        if (isset($imageHandler) && $imageResult && $imageResult['success']) {
+            $imageHandler->deleteImage($imageResult['filename']);
+        }
+    }
+}
+
+// Buscar categorias
+$categorias = [];
+try {
+    if (!isset($eventController)) {
+        require_once '../../config/config.php';
+        require_once '../../controllers/EventController.php';
+        $eventController = new EventController();
+    }
+    $categorias = $eventController->getCategories();
+} catch (Exception $e) {
+    error_log("Erro ao buscar categorias: " . $e->getMessage());
+    // Categorias de fallback
+    $categorias = [
+        ['id_categoria' => 1, 'nome' => 'Tecnologia'],
+        ['id_categoria' => 2, 'nome' => 'Negócios'],
+        ['id_categoria' => 3, 'nome' => 'Marketing'],
+        ['id_categoria' => 4, 'nome' => 'Design'],
+        ['id_categoria' => 5, 'nome' => 'Educação']
+    ];
+}
+?>
+
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?php echo $title; ?></title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
         body {
@@ -102,14 +222,6 @@
             border-radius: 0.5rem;
             border-left: 4px solid #28a745;
         }
-        
-        .upload-notice {
-            background: #fff3cd;
-            border: 1px solid #ffeaa7;
-            border-radius: 0.5rem;
-            padding: 1rem;
-            margin-bottom: 1rem;
-        }
     </style>
 </head>
 <body>
@@ -189,62 +301,54 @@
         <?php endif; ?>
 
         <form method="POST" enctype="multipart/form-data" id="createEventForm">
-            <?php if ($uploadHandlerExists): ?>
-                <!-- Imagem de Capa -->
-                <div class="form-section">
-                    <h4><i class="fas fa-image me-2"></i>Imagem de Capa</h4>
-                    
-                    <div class="upload-area" id="uploadArea">
-                        <div class="upload-content">
-                            <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
-                            <h5>Arraste uma imagem aqui ou clique para selecionar</h5>
-                            <p class="text-muted mb-2">Tamanho máximo: 5MB</p>
-                            <p class="text-muted">Formatos aceitos: JPG, PNG, GIF, WebP</p>
-                            <button type="button" class="btn btn-outline-primary" onclick="document.getElementById('imagem_capa').click()">
-                                <i class="fas fa-folder-open me-2"></i>Escolher Arquivo
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <input type="file" 
-                           class="d-none" 
-                           id="imagem_capa" 
-                           name="imagem_capa" 
-                           accept="image/jpeg,image/jpg,image/png,image/gif,image/webp">
-                    
-                    <img id="imagePreview" class="file-preview" alt="Preview da imagem">
-                    
-                    <div class="file-info" id="fileInfo">
-                        <div class="d-flex justify-content-between align-items-center">
-                            <div>
-                                <strong id="fileName"></strong>
-                                <div class="small text-muted" id="fileSize"></div>
-                            </div>
-                            <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeSelectedFile()">
-                                <i class="fas fa-trash me-1"></i>Remover
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div class="upload-progress" id="uploadProgress">
-                        <div class="progress">
-                            <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
-                        </div>
-                        <small class="text-muted mt-1">Processando imagem...</small>
-                    </div>
-                    
-                    <div class="form-text">
-                        <i class="fas fa-info-circle me-1"></i>
-                        A imagem será automaticamente redimensionada se for muito grande. Recomendamos imagens em formato landscape (16:9) para melhor visualização.
+            <!-- Imagem de Capa -->
+            <div class="form-section">
+                <h4><i class="fas fa-image me-2"></i>Imagem de Capa</h4>
+                
+                <div class="upload-area" id="uploadArea">
+                    <div class="upload-content">
+                        <i class="fas fa-cloud-upload-alt fa-3x text-muted mb-3"></i>
+                        <h5>Arraste uma imagem aqui ou clique para selecionar</h5>
+                        <p class="text-muted mb-2">Tamanho máximo: 5MB</p>
+                        <p class="text-muted">Formatos aceitos: JPG, PNG, GIF, WebP</p>
+                        <button type="button" class="btn btn-outline-primary" onclick="document.getElementById('imagem_capa').click()">
+                            <i class="fas fa-folder-open me-2"></i>Escolher Arquivo
+                        </button>
                     </div>
                 </div>
-            <?php else: ?>
-                <!-- Aviso sobre upload de imagem -->
-                <div class="upload-notice">
-                    <i class="fas fa-info-circle me-2"></i>
-                    <strong>Aviso:</strong> O upload de imagem estará disponível em breve. Por enquanto, você pode criar eventos sem imagem de capa.
+                
+                <input type="file" 
+                       class="d-none" 
+                       id="imagem_capa" 
+                       name="imagem_capa" 
+                       accept="image/jpeg,image/jpg,image/png,image/gif,image/webp">
+                
+                <img id="imagePreview" class="file-preview" alt="Preview da imagem">
+                
+                <div class="file-info" id="fileInfo">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <div>
+                            <strong id="fileName"></strong>
+                            <div class="small text-muted" id="fileSize"></div>
+                        </div>
+                        <button type="button" class="btn btn-sm btn-outline-danger" onclick="removeSelectedFile()">
+                            <i class="fas fa-trash me-1"></i>Remover
+                        </button>
+                    </div>
                 </div>
-            <?php endif; ?>
+                
+                <div class="upload-progress" id="uploadProgress">
+                    <div class="progress">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" style="width: 0%"></div>
+                    </div>
+                    <small class="text-muted mt-1">Processando imagem...</small>
+                </div>
+                
+                <div class="form-text">
+                    <i class="fas fa-info-circle me-1"></i>
+                    A imagem será automaticamente redimensionada se for muito grande. Recomendamos imagens em formato landscape (16:9) para melhor visualização.
+                </div>
+            </div>
 
             <!-- Informações Básicas -->
             <div class="form-section">
@@ -452,8 +556,14 @@
     
     <script>
         document.addEventListener('DOMContentLoaded', function() {
+            const uploadArea = document.getElementById('uploadArea');
+            const fileInput = document.getElementById('imagem_capa');
+            const imagePreview = document.getElementById('imagePreview');
+            const fileInfo = document.getElementById('fileInfo');
+            const fileName = document.getElementById('fileName');
+            const fileSize = document.getElementById('fileSize');
+            const uploadProgress = document.getElementById('uploadProgress');
             const form = document.getElementById('createEventForm');
-            const uploadHandlerExists = <?php echo $uploadHandlerExists ? 'true' : 'false'; ?>;
 
             // Toggle preço baseado em evento gratuito
             const eventoGratuito = document.getElementById('evento_gratuito');
@@ -466,89 +576,79 @@
                 }
             });
 
-            // Upload de imagem (apenas se handler existir)
-            if (uploadHandlerExists) {
-                const uploadArea = document.getElementById('uploadArea');
-                const fileInput = document.getElementById('imagem_capa');
-                const imagePreview = document.getElementById('imagePreview');
-                const fileInfo = document.getElementById('fileInfo');
-                const fileName = document.getElementById('fileName');
-                const fileSize = document.getElementById('fileSize');
-                const uploadProgress = document.getElementById('uploadProgress');
+            // Upload de imagem
+            uploadArea.addEventListener('click', function() {
+                fileInput.click();
+            });
 
-                uploadArea.addEventListener('click', function() {
-                    fileInput.click();
-                });
+            uploadArea.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                uploadArea.classList.add('dragover');
+            });
 
-                uploadArea.addEventListener('dragover', function(e) {
-                    e.preventDefault();
-                    uploadArea.classList.add('dragover');
-                });
+            uploadArea.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+            });
 
-                uploadArea.addEventListener('dragleave', function(e) {
-                    e.preventDefault();
-                    uploadArea.classList.remove('dragover');
-                });
+            uploadArea.addEventListener('drop', function(e) {
+                e.preventDefault();
+                uploadArea.classList.remove('dragover');
+                
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleFileSelect(files[0]);
+                }
+            });
 
-                uploadArea.addEventListener('drop', function(e) {
-                    e.preventDefault();
-                    uploadArea.classList.remove('dragover');
-                    
-                    const files = e.dataTransfer.files;
-                    if (files.length > 0) {
-                        handleFileSelect(files[0]);
-                    }
-                });
+            fileInput.addEventListener('change', function(e) {
+                if (e.target.files.length > 0) {
+                    handleFileSelect(e.target.files[0]);
+                }
+            });
 
-                fileInput.addEventListener('change', function(e) {
-                    if (e.target.files.length > 0) {
-                        handleFileSelect(e.target.files[0]);
-                    }
-                });
-
-                function handleFileSelect(file) {
-                    const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
-                    if (!allowedTypes.includes(file.type)) {
-                        showToast('Tipo de arquivo não permitido. Use: JPG, PNG, GIF ou WebP', 'error');
-                        return;
-                    }
-
-                    if (file.size > 5 * 1024 * 1024) {
-                        showToast('Arquivo muito grande. Tamanho máximo: 5MB', 'error');
-                        return;
-                    }
-
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        imagePreview.src = e.target.result;
-                        imagePreview.style.display = 'block';
-                        
-                        uploadArea.classList.add('has-file');
-                        fileName.textContent = file.name;
-                        fileSize.textContent = formatFileSize(file.size);
-                        fileInfo.style.display = 'block';
-                        
-                        uploadArea.querySelector('.upload-content').style.display = 'none';
-                    };
-                    reader.readAsDataURL(file);
+            function handleFileSelect(file) {
+                const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+                if (!allowedTypes.includes(file.type)) {
+                    showToast('Tipo de arquivo não permitido. Use: JPG, PNG, GIF ou WebP', 'error');
+                    return;
                 }
 
-                window.removeSelectedFile = function() {
-                    fileInput.value = '';
-                    imagePreview.style.display = 'none';
-                    fileInfo.style.display = 'none';
-                    uploadArea.classList.remove('has-file');
-                    uploadArea.querySelector('.upload-content').style.display = 'block';
-                };
+                if (file.size > 5 * 1024 * 1024) {
+                    showToast('Arquivo muito grande. Tamanho máximo: 5MB', 'error');
+                    return;
+                }
 
-                function formatFileSize(bytes) {
-                    if (bytes >= 1048576) {
-                        return (bytes / 1048576).toFixed(2) + ' MB';
-                    } else if (bytes >= 1024) {
-                        return (bytes / 1024).toFixed(2) + ' KB';
-                    } else {
-                        return bytes + ' B';
-                    }
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    imagePreview.src = e.target.result;
+                    imagePreview.style.display = 'block';
+                    
+                    uploadArea.classList.add('has-file');
+                    fileName.textContent = file.name;
+                    fileSize.textContent = formatFileSize(file.size);
+                    fileInfo.style.display = 'block';
+                    
+                    uploadArea.querySelector('.upload-content').style.display = 'none';
+                };
+                reader.readAsDataURL(file);
+            }
+
+            window.removeSelectedFile = function() {
+                fileInput.value = '';
+                imagePreview.style.display = 'none';
+                fileInfo.style.display = 'none';
+                uploadArea.classList.remove('has-file');
+                uploadArea.querySelector('.upload-content').style.display = 'block';
+            };
+
+            function formatFileSize(bytes) {
+                if (bytes >= 1048576) {
+                    return (bytes / 1048576).toFixed(2) + ' MB';
+                } else if (bytes >= 1024) {
+                    return (bytes / 1024).toFixed(2) + ' KB';
+                } else {
+                    return bytes + ' B';
                 }
             }
 
@@ -584,9 +684,8 @@
                 submitBtn.disabled = true;
                 submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Criando evento...';
                 
-                const hasImage = uploadHandlerExists && document.getElementById('imagem_capa').files.length > 0;
+                const hasImage = fileInput.files.length > 0;
                 if (hasImage) {
-                    const uploadProgress = document.getElementById('uploadProgress');
                     uploadProgress.style.display = 'block';
                     submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Enviando imagem e criando evento...';
                 }
@@ -595,10 +694,7 @@
                 setTimeout(() => {
                     submitBtn.disabled = false;
                     submitBtn.innerHTML = originalText;
-                    if (hasImage) {
-                        const uploadProgress = document.getElementById('uploadProgress');
-                        uploadProgress.style.display = 'none';
-                    }
+                    uploadProgress.style.display = 'none';
                 }, 15000);
             });
 
@@ -676,122 +772,4 @@
         });
     </script>
 </body>
-</html><?php
-// ==========================================
-// CRIAR NOVO EVENTO - VERSÃO COM UPLOAD CONDICIONAL
-// Local: views/events/create.php
-// ==========================================
-
-session_start();
-
-// Verificar se está logado e é organizador
-if (!isset($_SESSION['logged_in']) || $_SESSION['logged_in'] !== true) {
-    header("Location: ../auth/login.php");
-    exit;
-}
-
-if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'organizador') {
-    header("Location: ../dashboard/participant.php");
-    exit;
-}
-
-$title = "Criar Evento - Conecta Eventos";
-$userName = $_SESSION['user_name'] ?? 'Organizador';
-
-// URLs
-$dashboardUrl = '../dashboard/organizer.php';
-$homeUrl = '../../index.php';
-
-$success_message = '';
-$error_message = '';
-
-// Verificar se ImageUploadHandler existe
-$uploadHandlerExists = file_exists('../../handlers/ImageUploadHandler.php');
-error_log("Upload handler exists: " . ($uploadHandlerExists ? 'YES' : 'NO'));
-
-// Processar formulário
-if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-    try {
-        // Carregar dependências necessárias
-        require_once '../../config/config.php';
-        require_once '../../includes/session.php';
-        require_once '../../controllers/EventController.php';
-        
-        $eventController = new EventController();
-        $imageResult = null;
-        
-        // Processar upload de imagem apenas se handler existir
-        if ($uploadHandlerExists && isset($_FILES['imagem_capa']) && $_FILES['imagem_capa']['error'] !== UPLOAD_ERR_NO_FILE) {
-            require_once '../../handlers/ImageUploadHandler.php';
-            $imageHandler = new ImageUploadHandler();
-            
-            $imageResult = $imageHandler->uploadImage($_FILES['imagem_capa']);
-            
-            if (!$imageResult['success']) {
-                $error_message = "Erro no upload da imagem: " . $imageResult['message'];
-            }
-        }
-        
-        // Se não houve erro na imagem (ou não teve upload), criar evento
-        if (!$error_message) {
-            // Adicionar nome da imagem aos dados se upload foi bem-sucedido
-            if ($imageResult && $imageResult['success']) {
-                $_POST['imagem_capa'] = $imageResult['filename'];
-            }
-            
-            $result = $eventController->create($_POST);
-            
-            if ($result['success']) {
-                $success_message = $result['message'];
-                // Limpar dados do formulário após sucesso
-                $_POST = [];
-            } else {
-                $error_message = $result['message'];
-                
-                // Se evento falhou mas imagem foi enviada, deletar imagem
-                if ($uploadHandlerExists && $imageResult && $imageResult['success']) {
-                    $imageHandler->deleteImage($imageResult['filename']);
-                }
-            }
-        }
-        
-    } catch (Exception $e) {
-        error_log("Erro ao criar evento: " . $e->getMessage());
-        $error_message = "Erro interno do sistema. Tente novamente.";
-        
-        // Deletar imagem se foi enviada
-        if ($uploadHandlerExists && isset($imageHandler) && $imageResult && $imageResult['success']) {
-            $imageHandler->deleteImage($imageResult['filename']);
-        }
-    }
-}
-
-// Buscar categorias
-$categorias = [];
-try {
-    if (!isset($eventController)) {
-        require_once '../../config/config.php';
-        require_once '../../controllers/EventController.php';
-        $eventController = new EventController();
-    }
-    $categorias = $eventController->getCategories();
-} catch (Exception $e) {
-    error_log("Erro ao buscar categorias: " . $e->getMessage());
-    // Categorias de fallback
-    $categorias = [
-        ['id_categoria' => 1, 'nome' => 'Tecnologia'],
-        ['id_categoria' => 2, 'nome' => 'Negócios'],
-        ['id_categoria' => 3, 'nome' => 'Marketing'],
-        ['id_categoria' => 4, 'nome' => 'Design'],
-        ['id_categoria' => 5, 'nome' => 'Educação']
-    ];
-}
-?>
-
-<!DOCTYPE html>
-<html lang="pt-br">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?php echo $title; ?></title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+</html>
