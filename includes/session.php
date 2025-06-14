@@ -300,17 +300,6 @@ function hasPermission($resource, $action = 'view') {
 }
 
 /**
- * Sanitizar dados de entrada
- */
-function sanitizeInput($data) {
-    if (is_array($data)) {
-        return array_map('sanitizeInput', $data);
-    }
-    
-    return htmlspecialchars(trim($data), ENT_QUOTES, 'UTF-8');
-}
-
-/**
  * Validar email
  */
 function isValidEmail($email) {
