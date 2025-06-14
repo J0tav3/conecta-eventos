@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// DASHBOARD DO PARTICIPANTE
+// DASHBOARD DO PARTICIPANTE - VERSÃO ATUALIZADA
 // Local: views/dashboard/participant.php
 // ==========================================
 
@@ -230,10 +230,10 @@ $eventos_recomendados = [
             <ul class="sidebar-nav px-3">
                 <li><a href="#" class="active"><i class="fas fa-tachometer-alt me-2"></i>Meu Painel</a></li>
                 <li><a href="<?php echo $homeUrl; ?>"><i class="fas fa-search me-2"></i>Explorar Eventos</a></li>
-                <li><a href="#"><i class="fas fa-calendar me-2"></i>Meus Eventos</a></li>
-                <li><a href="#"><i class="fas fa-heart me-2"></i>Favoritos</a></li>
-                <li><a href="#"><i class="fas fa-history me-2"></i>Histórico</a></li>
-                <li><a href="#"><i class="fas fa-user-edit me-2"></i>Perfil</a></li>
+                <li><a href="subscriptions.php"><i class="fas fa-calendar me-2"></i>Meus Eventos</a></li>
+                <li><a href="favorites.php"><i class="fas fa-heart me-2"></i>Favoritos</a></li>
+                <li><a href="history.php"><i class="fas fa-history me-2"></i>Histórico</a></li>
+                <li><a href="participant-settings.php"><i class="fas fa-cog me-2"></i>Configurações</a></li>
             </ul>
         </nav>
 
@@ -258,8 +258,11 @@ $eventos_recomendados = [
                 <p class="text-muted mb-0">Olá, <?php echo htmlspecialchars($userName); ?>! Veja seus eventos e descubra novos.</p>
             </div>
             <div>
-                <a href="<?php echo $homeUrl; ?>" class="btn btn-success">
+                <a href="<?php echo $homeUrl; ?>" class="btn btn-success me-2">
                     <i class="fas fa-search me-2"></i>Explorar Eventos
+                </a>
+                <a href="participant-settings.php" class="btn btn-outline-primary">
+                    <i class="fas fa-cog me-2"></i>Configurações
                 </a>
             </div>
         </div>
@@ -331,7 +334,7 @@ $eventos_recomendados = [
                         <h5 class="mb-0">
                             <i class="fas fa-calendar-alt me-2"></i>Próximos Eventos
                         </h5>
-                        <a href="#" class="btn btn-sm btn-outline-success">Ver Todos</a>
+                        <a href="subscriptions.php" class="btn btn-sm btn-outline-success">Ver Todos</a>
                     </div>
                     <div class="card-body">
                         <?php if (empty($proximos_eventos)): ?>
@@ -374,9 +377,9 @@ $eventos_recomendados = [
                                             </small>
                                         </div>
                                         <div class="col-md-1">
-                                            <button class="btn btn-sm btn-outline-success">
+                                            <a href="../events/view.php?id=<?php echo $evento['id']; ?>" class="btn btn-sm btn-outline-success">
                                                 <i class="fas fa-eye"></i>
-                                            </button>
+                                            </a>
                                         </div>
                                     </div>
                                 </div>
@@ -415,9 +418,9 @@ $eventos_recomendados = [
                                     <strong class="text-success">
                                         <?php echo $evento['preco'] > 0 ? 'R$ ' . number_format($evento['preco'], 2, ',', '.') : 'Gratuito'; ?>
                                     </strong>
-                                    <button class="btn btn-sm btn-success">
-                                        <i class="fas fa-plus me-1"></i>Inscrever
-                                    </button>
+                                    <a href="../events/view.php?id=<?php echo $evento['id']; ?>" class="btn btn-sm btn-success">
+                                        <i class="fas fa-eye me-1"></i>Ver
+                                    </a>
                                 </div>
                             </div>
                         <?php endforeach; ?>
@@ -443,19 +446,19 @@ $eventos_recomendados = [
                                 </a>
                             </div>
                             <div class="col-md-3 mb-2">
-                                <button class="btn btn-info w-100">
+                                <a href="favorites.php" class="btn btn-info w-100">
                                     <i class="fas fa-heart me-2"></i>Meus Favoritos
-                                </button>
+                                </a>
                             </div>
                             <div class="col-md-3 mb-2">
-                                <button class="btn btn-warning w-100">
+                                <a href="subscriptions.php" class="btn btn-warning w-100">
                                     <i class="fas fa-calendar me-2"></i>Minha Agenda
-                                </button>
+                                </a>
                             </div>
                             <div class="col-md-3 mb-2">
-                                <button class="btn btn-primary w-100">
-                                    <i class="fas fa-user-edit me-2"></i>Editar Perfil
-                                </button>
+                                <a href="participant-settings.php" class="btn btn-primary w-100">
+                                    <i class="fas fa-cog me-2"></i>Configurações
+                                </a>
                             </div>
                         </div>
                     </div>
@@ -473,11 +476,16 @@ $eventos_recomendados = [
                             Dica do Dia
                         </h5>
                         <p class="mb-3">
-                            Participe de eventos relacionados aos seus interesses para expandir seu networking e conhecimento!
+                            Configure suas preferências de eventos nas <a href="participant-settings.php" class="text-decoration-none">configurações</a> para receber recomendações personalizadas!
                         </p>
-                        <a href="<?php echo $homeUrl; ?>" class="btn btn-success">
-                            <i class="fas fa-search me-2"></i>Descobrir Novos Eventos
-                        </a>
+                        <div class="d-flex justify-content-center gap-2">
+                            <a href="<?php echo $homeUrl; ?>" class="btn btn-success">
+                                <i class="fas fa-search me-2"></i>Descobrir Eventos
+                            </a>
+                            <a href="participant-settings.php" class="btn btn-outline-primary">
+                                <i class="fas fa-cog me-2"></i>Personalizar
+                            </a>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -526,6 +534,18 @@ $eventos_recomendados = [
                         this.style.transform = 'scale(1)';
                     }, 150);
                 });
+            });
+
+            // Highlight do menu ativo
+            const currentPath = window.location.pathname;
+            const navLinks = document.querySelectorAll('.sidebar-nav a');
+            
+            navLinks.forEach(link => {
+                if (link.getAttribute('href') === currentPath.split('/').pop()) {
+                    link.classList.add('active');
+                } else {
+                    link.classList.remove('active');
+                }
             });
         });
     </script>
