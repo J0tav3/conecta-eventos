@@ -1,8 +1,8 @@
 /**
  * ==========================================
- * JAVASCRIPT PARA UPLOAD DE FOTO DE PERFIL
+ * JAVASCRIPT PARA UPLOAD DE FOTO DE PERFIL - CORRIGIDO
  * ==========================================
- * Local: assets/js/profile-photo.js
+ * Local: public/js/profile-photo.js
  */
 
 class ProfilePhotoManager {
@@ -75,6 +75,8 @@ class ProfilePhotoManager {
         if (file) {
             this.handleFile(file);
         }
+        // CORREÇÃO: Limpar o input para permitir reenvio do mesmo arquivo
+        event.target.value = '';
     }
     
     handleFile(file) {
@@ -119,22 +121,7 @@ class ProfilePhotoManager {
         
         reader.onload = (e) => {
             if (avatar) {
-                // Criar elemento de imagem se não existir
-                let img = avatar.querySelector('img');
-                if (!img) {
-                    img = document.createElement('img');
-                    img.style.cssText = `
-                        width: 100%;
-                        height: 100%;
-                        border-radius: 50%;
-                        object-fit: cover;
-                    `;
-                    avatar.innerHTML = '';
-                    avatar.appendChild(img);
-                }
-                
-                img.src = e.target.result;
-                avatar.classList.add('has-image');
+                this.updateAvatarDisplay(e.target.result, true);
             }
         };
         
@@ -162,8 +149,19 @@ class ProfilePhotoManager {
             
             if (result.success) {
                 this.showToast(result.message, 'success');
-                this.updatePhotoDisplay(result.image_info);
-                this.updateNavbarPhoto(result.image_info.url);
+                
+                // CORREÇÃO: Usar a URL da resposta, com cache-busting
+                const imageUrl = result.image_info.url + '?t=' + Date.now();
+                this.updateAvatarDisplay(imageUrl, false);
+                this.updateNavbarPhoto(imageUrl);
+                this.ensureRemoveButton();
+                
+                // Aguardar um momento e atualizar novamente para garantir
+                setTimeout(() => {
+                    this.updateAvatarDisplay(imageUrl, false);
+                    this.updateNavbarPhoto(imageUrl);
+                }, 500);
+                
             } else {
                 this.showToast(result.message, 'error');
                 this.revertToCurrentPhoto();
@@ -202,6 +200,7 @@ class ProfilePhotoManager {
                 this.showToast(result.message, 'success');
                 this.removePhotoDisplay();
                 this.updateNavbarPhoto(null);
+                this.removeRemoveButton();
             } else {
                 this.showToast(result.message, 'error');
             }
@@ -215,52 +214,60 @@ class ProfilePhotoManager {
         }
     }
     
-    updatePhotoDisplay(imageInfo) {
+    /**
+     * CORREÇÃO: Método melhorado para atualizar o avatar
+     */
+    updateAvatarDisplay(imageSrc, isPreview = false) {
         const avatar = document.querySelector('.avatar');
-        if (avatar && imageInfo) {
-            let img = avatar.querySelector('img');
-            if (!img) {
-                img = document.createElement('img');
-                img.style.cssText = `
-                    width: 100%;
-                    height: 100%;
-                    border-radius: 50%;
-                    object-fit: cover;
-                `;
-                avatar.innerHTML = '';
-                avatar.appendChild(img);
-            }
+        if (!avatar) return;
+        
+        // Limpar conteúdo atual
+        avatar.innerHTML = '';
+        
+        if (imageSrc) {
+            const img = document.createElement('img');
+            img.style.cssText = `
+                width: 100%;
+                height: 100%;
+                border-radius: 50%;
+                object-fit: cover;
+            `;
             
-            img.src = imageInfo.url;
-            avatar.classList.add('has-image');
+            // Aguardar carregamento da imagem
+            img.onload = () => {
+                avatar.classList.add('has-image');
+            };
             
-            // Adicionar botão de remover se não existir
-            this.addRemoveButton();
+            img.onerror = () => {
+                console.error('Erro ao carregar imagem:', imageSrc);
+                if (!isPreview) {
+                    this.revertToCurrentPhoto();
+                }
+            };
+            
+            img.src = imageSrc;
+            avatar.appendChild(img);
+            
+        } else {
+            // Mostrar inicial do usuário
+            const userName = document.body.getAttribute('data-user-name') || 'U';
+            const initial = userName.charAt(0).toUpperCase();
+            avatar.textContent = initial;
+            avatar.classList.remove('has-image');
         }
     }
     
     removePhotoDisplay() {
-        const avatar = document.querySelector('.avatar');
-        if (avatar) {
-            // Voltar para o avatar com inicial
-            const userName = document.querySelector('input[name="nome"]')?.value || 'U';
-            const initial = userName.charAt(0).toUpperCase();
-            
-            avatar.innerHTML = initial;
-            avatar.classList.remove('has-image');
-            
-            // Remover botão de remover
-            this.removeRemoveButton();
-        }
+        this.updateAvatarDisplay(null);
     }
     
-    addRemoveButton() {
+    ensureRemoveButton() {
         if (document.getElementById('removePhotoBtn')) {
             return; // Botão já existe
         }
         
         const avatarUpload = document.querySelector('.avatar-upload');
-        if (avatarUpload) {
+        if (avatarUpload && avatarUpload.parentNode) {
             const removeBtn = document.createElement('button');
             removeBtn.id = 'removePhotoBtn';
             removeBtn.type = 'button';
@@ -268,7 +275,8 @@ class ProfilePhotoManager {
             removeBtn.innerHTML = '<i class="fas fa-trash me-1"></i>Remover Foto';
             removeBtn.onclick = () => this.removePhoto();
             
-            avatarUpload.parentNode.appendChild(removeBtn);
+            // Inserir após o container da foto
+            avatarUpload.parentNode.insertBefore(removeBtn, avatarUpload.nextSibling);
         }
     }
     
@@ -279,44 +287,79 @@ class ProfilePhotoManager {
         }
     }
     
+    /**
+     * CORREÇÃO: Método melhorado para atualizar fotos na navbar
+     */
     updateNavbarPhoto(photoUrl) {
-        // Atualizar foto na navbar se existir
-        const navbarPhotos = document.querySelectorAll('.navbar-user-photo, .sidebar-user-photo');
+        // Selecionar todos os elementos de foto do usuário
+        const navbarPhotos = document.querySelectorAll('.navbar-user-photo, .sidebar-user-photo, .user-avatar, .dropdown-avatar');
         
         navbarPhotos.forEach(photo => {
             if (photoUrl) {
+                // Adicionar cache-busting à URL
+                const cacheBustedUrl = photoUrl + (photoUrl.includes('?') ? '&' : '?') + 't=' + Date.now();
+                
                 if (photo.tagName === 'IMG') {
-                    photo.src = photoUrl;
+                    photo.src = cacheBustedUrl;
                 } else {
-                    photo.style.backgroundImage = `url(${photoUrl})`;
-                    photo.style.backgroundSize = 'cover';
-                    photo.style.backgroundPosition = 'center';
-                    photo.textContent = '';
+                    // Limpar conteúdo e adicionar imagem
+                    photo.innerHTML = '';
+                    const img = document.createElement('img');
+                    img.src = cacheBustedUrl;
+                    img.style.cssText = `
+                        width: 100%;
+                        height: 100%;
+                        object-fit: cover;
+                        border-radius: 50%;
+                    `;
+                    photo.appendChild(img);
                 }
             } else {
                 // Voltar para inicial
-                const userName = document.querySelector('input[name="nome"]')?.value || 'U';
+                const userName = document.body.getAttribute('data-user-name') || 'U';
                 const initial = userName.charAt(0).toUpperCase();
                 
                 if (photo.tagName === 'IMG') {
-                    photo.src = '';
                     photo.style.display = 'none';
                 } else {
+                    photo.innerHTML = initial;
                     photo.style.backgroundImage = '';
-                    photo.textContent = initial;
                 }
             }
         });
     }
     
     revertToCurrentPhoto() {
-        // Recarregar a foto atual em caso de erro
-        this.loadCurrentPhoto();
+        // Tentar obter a foto atual da sessão/página
+        const currentPhotoElements = document.querySelectorAll('.navbar-user-photo img, .sidebar-user-photo img');
+        let currentPhotoUrl = null;
+        
+        for (const element of currentPhotoElements) {
+            if (element.src && !element.src.includes('data:')) {
+                currentPhotoUrl = element.src.split('?')[0]; // Remove cache-busting
+                break;
+            }
+        }
+        
+        if (currentPhotoUrl) {
+            this.updateAvatarDisplay(currentPhotoUrl);
+        } else {
+            this.updateAvatarDisplay(null);
+        }
     }
     
     async loadCurrentPhoto() {
-        // Esta função pode ser expandida para carregar a foto atual do servidor
-        // Por enquanto, vamos usar o que já está na página
+        // Carregar foto atual se existir
+        const currentPhotoElements = document.querySelectorAll('.navbar-user-photo img, .sidebar-user-photo img');
+        
+        for (const element of currentPhotoElements) {
+            if (element.src && !element.src.includes('data:')) {
+                const photoUrl = element.src.split('?')[0]; // Remove cache-busting
+                this.updateAvatarDisplay(photoUrl);
+                this.ensureRemoveButton();
+                break;
+            }
+        }
     }
     
     showLoadingState(isLoading) {
@@ -435,6 +478,16 @@ const additionalCSS = `
     
     .avatar-upload.uploading {
         animation: photoUpload 2s infinite;
+    }
+    
+    /* Garantir que imagens de perfil não tenham cache */
+    .navbar-user-photo img,
+    .sidebar-user-photo img,
+    .user-avatar img,
+    .dropdown-avatar img,
+    .avatar img {
+        image-rendering: -webkit-optimize-contrast;
+        image-rendering: crisp-edges;
     }
 `;
 

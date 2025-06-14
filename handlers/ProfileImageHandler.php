@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// HANDLER DE IMAGENS DE PERFIL
+// HANDLER DE IMAGENS DE PERFIL - CORRIGIDO
 // Local: handlers/ProfileImageHandler.php
 // ==========================================
 
@@ -133,6 +133,9 @@ class ProfileImageHandler {
                 $dbResult = $this->updateProfileImageInDatabase($userId, $newFileName);
                 
                 if ($dbResult) {
+                    // CORREÇÃO: Atualizar a sessão com a nova foto
+                    $this->updateSessionPhoto($newFileName);
+                    
                     // Remover imagem antiga se existir
                     if ($currentImage && $currentImage !== $newFileName) {
                         $this->deleteImage($currentImage);
@@ -190,6 +193,9 @@ class ProfileImageHandler {
             $dbResult = $this->updateProfileImageInDatabase($userId, null);
             
             if ($dbResult) {
+                // CORREÇÃO: Atualizar a sessão removendo a foto
+                $this->updateSessionPhoto(null);
+                
                 // Remover arquivo físico
                 $this->deleteImage($currentImage);
                 
@@ -213,6 +219,25 @@ class ProfileImageHandler {
                 'message' => 'Erro interno: ' . $e->getMessage()
             ];
         }
+    }
+    
+    /**
+     * NOVO: Atualizar foto de perfil na sessão
+     */
+    private function updateSessionPhoto($photoName) {
+        // Garantir que a sessão está iniciada
+        if (session_status() == PHP_SESSION_NONE) {
+            session_start();
+        }
+        
+        if (isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true) {
+            $_SESSION['user_photo'] = $photoName;
+            $this->log("Sessão atualizada com nova foto: " . ($photoName ?: 'NULL'));
+            return true;
+        }
+        
+        $this->log("ERRO: Usuário não está logado, não foi possível atualizar sessão");
+        return false;
     }
     
     /**
@@ -251,7 +276,18 @@ class ProfileImageHandler {
                 return false;
             }
             
-            $stmt = $conn->prepare("UPDATE usuarios SET foto_perfil = ?, data_atualizacao = NOW() WHERE id_usuario = ?");
+            // CORREÇÃO: Verificar se a tabela tem a coluna foto_perfil
+            $stmt = $conn->prepare("SHOW COLUMNS FROM usuarios LIKE 'foto_perfil'");
+            $stmt->execute();
+            
+            if ($stmt->rowCount() === 0) {
+                // Adicionar coluna se não existir
+                $this->log("Adicionando coluna foto_perfil à tabela usuarios");
+                $alterSql = "ALTER TABLE usuarios ADD COLUMN foto_perfil VARCHAR(255) NULL AFTER senha";
+                $conn->exec($alterSql);
+            }
+            
+            $stmt = $conn->prepare("UPDATE usuarios SET foto_perfil = ? WHERE id_usuario = ?");
             $result = $stmt->execute([$fileName, $userId]);
             
             $this->log("Banco atualizado - User: $userId, Image: " . ($fileName ?: 'NULL') . ", Result: " . ($result ? 'SUCCESS' : 'FAIL'));

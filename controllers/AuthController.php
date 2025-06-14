@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// AUTH CONTROLLER - VERSÃO COM FOTO DE PERFIL
+// AUTH CONTROLLER - VERSÃO COM FOTO DE PERFIL CORRIGIDA
 // Local: controllers/AuthController.php
 // ==========================================
 
@@ -60,6 +60,9 @@ class AuthController {
         }
         
         try {
+            // CORREÇÃO: Garantir que a coluna foto_perfil existe
+            $this->ensurePhotoColumn();
+            
             // Buscar usuário no banco - INCLUINDO FOTO DE PERFIL
             $stmt = $this->conn->prepare("
                 SELECT id_usuario, nome, email, senha, tipo, ativo, foto_perfil 
@@ -131,6 +134,41 @@ class AuthController {
     }
     
     /**
+     * NOVO: Garantir que a coluna foto_perfil existe
+     */
+    private function ensurePhotoColumn() {
+        try {
+            // Verificar se a coluna existe
+            $stmt = $this->conn->prepare("SHOW COLUMNS FROM usuarios LIKE 'foto_perfil'");
+            $stmt->execute();
+            
+            if ($stmt->rowCount() === 0) {
+                // Adicionar coluna se não existir
+                $this->log("Adicionando coluna foto_perfil à tabela usuarios");
+                $alterSql = "ALTER TABLE usuarios ADD COLUMN foto_perfil VARCHAR(255) NULL AFTER senha";
+                $this->conn->exec($alterSql);
+                $this->log("Coluna foto_perfil adicionada com sucesso");
+            }
+            
+            // Verificar se a coluna data_atualizacao existe
+            $stmt = $this->conn->prepare("SHOW COLUMNS FROM usuarios LIKE 'data_atualizacao'");
+            $stmt->execute();
+            
+            if ($stmt->rowCount() === 0) {
+                // Adicionar coluna se não existir
+                $this->log("Adicionando coluna data_atualizacao à tabela usuarios");
+                $alterSql = "ALTER TABLE usuarios ADD COLUMN data_atualizacao TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP AFTER data_criacao";
+                $this->conn->exec($alterSql);
+                $this->log("Coluna data_atualizacao adicionada com sucesso");
+            }
+            
+        } catch (Exception $e) {
+            $this->log("Erro ao verificar/criar colunas: " . $e->getMessage());
+            // Não parar a execução por causa disso
+        }
+    }
+    
+    /**
      * Processar cadastro
      */
     public function register($data) {
@@ -164,6 +202,9 @@ class AuthController {
         }
         
         try {
+            // CORREÇÃO: Garantir que as colunas existem
+            $this->ensurePhotoColumn();
+            
             $this->log("Verificando email existente: " . $email);
             
             // Verificar se email já existe
@@ -185,8 +226,8 @@ class AuthController {
             $this->log("Hash da senha criado: " . substr($senha_hash, 0, 20) . "...");
             
             // Inserir usuário - INCLUINDO CAMPOS PARA FOTO DE PERFIL
-            $sql = "INSERT INTO usuarios (nome, email, senha, tipo, telefone, cidade, estado, ativo, data_criacao, data_atualizacao) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())";
+            $sql = "INSERT INTO usuarios (nome, email, senha, tipo, telefone, cidade, estado, ativo, foto_perfil, data_criacao, data_atualizacao) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 1, NULL, NOW(), NOW())";
             
             $stmt = $this->conn->prepare($sql);
             
@@ -330,11 +371,11 @@ class AuthController {
         $_SESSION['user_name'] = $user['nome'];
         $_SESSION['user_email'] = $user['email'];
         $_SESSION['user_type'] = $user['tipo'];
-        $_SESSION['user_photo'] = $user['foto_perfil'] ?? null; // NOVO CAMPO
+        $_SESSION['user_photo'] = $user['foto_perfil'] ?? null; // CAMPO PARA FOTO
         $_SESSION['logged_in'] = true;
         $_SESSION['login_time'] = time();
         
-        $this->log("Sessão criada para: " . $user['nome']);
+        $this->log("Sessão criada para: " . $user['nome'] . " (Foto: " . ($user['foto_perfil'] ?? 'NULL') . ")");
         
         // Regenerar ID da sessão para segurança
         session_regenerate_id(true);
@@ -413,7 +454,7 @@ class AuthController {
             'name' => $_SESSION['user_name'],
             'email' => $_SESSION['user_email'],
             'type' => $_SESSION['user_type'],
-            'photo' => $_SESSION['user_photo'] ?? null, // NOVO CAMPO
+            'photo' => $_SESSION['user_photo'] ?? null, // FOTO DE PERFIL
             'login_time' => $_SESSION['login_time'] ?? null
         ];
     }
@@ -458,7 +499,47 @@ class AuthController {
         
         if ($this->isLoggedIn()) {
             $_SESSION['user_photo'] = $photoName;
+            $this->log("Foto de perfil atualizada na sessão: " . ($photoName ?: 'NULL'));
             return true;
+        }
+        
+        return false;
+    }
+    
+    /**
+     * Recarregar dados do usuário na sessão (para sincronizar com banco)
+     */
+    public function refreshUserSession() {
+        if (!$this->isLoggedIn()) {
+            return false;
+        }
+        
+        try {
+            $userId = $_SESSION['user_id'];
+            
+            // Buscar dados atualizados do banco
+            $stmt = $this->conn->prepare("
+                SELECT id_usuario, nome, email, tipo, ativo, foto_perfil 
+                FROM usuarios 
+                WHERE id_usuario = ? AND ativo = 1
+            ");
+            $stmt->execute([$userId]);
+            
+            if ($stmt->rowCount() > 0) {
+                $user = $stmt->fetch();
+                
+                // Atualizar sessão com dados do banco
+                $_SESSION['user_name'] = $user['nome'];
+                $_SESSION['user_email'] = $user['email'];
+                $_SESSION['user_type'] = $user['tipo'];
+                $_SESSION['user_photo'] = $user['foto_perfil'];
+                
+                $this->log("Sessão atualizada com dados do banco para usuário: " . $user['nome']);
+                return true;
+            }
+            
+        } catch (Exception $e) {
+            $this->log("Erro ao atualizar sessão: " . $e->getMessage());
         }
         
         return false;
