@@ -1,0 +1,15 @@
+# Impedir execução de scripts
+php_flag engine off
+AddType text/plain .php .php3 .phtml .pht
+
+# Apenas imagens
+<Files ~ "\.(php|php3|phtml|pht|jsp|asp|aspx|cgi|pl)$">
+    Order allow,deny
+    Deny from all
+</Files>
+
+# Permitir acesso às imagens
+<Files ~ "\.(jpg|jpeg|png|gif|webp)$">
+    Order allow,deny
+    Allow from all
+</Files>
