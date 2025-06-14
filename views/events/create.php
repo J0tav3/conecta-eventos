@@ -737,6 +737,257 @@ try {
                 }, 4000);
             };
         });
-    </script>
+    ?>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const uploadArea = document.getElementById('uploadArea');
+    const fileInput = document.getElementById('imagem_capa');
+    const imagePreview = document.getElementById('imagePreview');
+    const fileInfo = document.getElementById('fileInfo');
+    const fileName = document.getElementById('fileName');
+    const fileSize = document.getElementById('fileSize');
+    const uploadProgress = document.getElementById('uploadProgress');
+    const form = document.getElementById('createEventForm');
+
+    // Toggle preço baseado em evento gratuito
+    const eventoGratuito = document.getElementById('evento_gratuito');
+    const precoSection = document.getElementById('preco_section');
+    
+    eventoGratuito.addEventListener('change', function() {
+        precoSection.style.display = this.checked ? 'none' : 'block';
+        if (this.checked) {
+            document.getElementById('preco').value = '';
+        }
+    });
+
+    // Upload de imagem
+    uploadArea.addEventListener('click', function() {
+        fileInput.click();
+    });
+
+    uploadArea.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        uploadArea.classList.add('dragover');
+    });
+
+    uploadArea.addEventListener('dragleave', function(e) {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+    });
+
+    uploadArea.addEventListener('drop', function(e) {
+        e.preventDefault();
+        uploadArea.classList.remove('dragover');
+        
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            handleFileSelect(files[0]);
+        }
+    });
+
+    fileInput.addEventListener('change', function(e) {
+        if (e.target.files.length > 0) {
+            handleFileSelect(e.target.files[0]);
+        }
+    });
+
+    function handleFileSelect(file) {
+        const allowedTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+        if (!allowedTypes.includes(file.type)) {
+            showToast('Tipo de arquivo não permitido. Use: JPG, PNG, GIF ou WebP', 'error');
+            return;
+        }
+
+        if (file.size > 5 * 1024 * 1024) {
+            showToast('Arquivo muito grande. Tamanho máximo: 5MB', 'error');
+            return;
+        }
+
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            imagePreview.src = e.target.result;
+            imagePreview.style.display = 'block';
+            
+            uploadArea.classList.add('has-file');
+            fileName.textContent = file.name;
+            fileSize.textContent = formatFileSize(file.size);
+            fileInfo.style.display = 'block';
+            
+            uploadArea.querySelector('.upload-content').style.display = 'none';
+        };
+        reader.readAsDataURL(file);
+    }
+
+    window.removeSelectedFile = function() {
+        fileInput.value = '';
+        imagePreview.style.display = 'none';
+        fileInfo.style.display = 'none';
+        uploadArea.classList.remove('has-file');
+        uploadArea.querySelector('.upload-content').style.display = 'block';
+    };
+
+    function formatFileSize(bytes) {
+        if (bytes >= 1048576) {
+            return (bytes / 1048576).toFixed(2) + ' MB';
+        } else if (bytes >= 1024) {
+            return (bytes / 1024).toFixed(2) + ' KB';
+        } else {
+            return bytes + ' B';
+        }
+    }
+
+    // Máscara de CEP
+    const cepInput = document.getElementById('local_cep');
+    cepInput.addEventListener('input', function(e) {
+        let value = e.target.value.replace(/\D/g, '');
+        value = value.replace(/(\d{5})(\d)/, '$1-$2');
+        e.target.value = value;
+    });
+
+    // Validação da data
+    const dataInicio = document.getElementById('data_inicio');
+    const dataFim = document.getElementById('data_fim');
+    
+    dataInicio.addEventListener('change', function() {
+        dataFim.min = this.value;
+        if (dataFim.value && dataFim.value < this.value) {
+            dataFim.value = this.value;
+        }
+    });
+
+    // NOVA VERSÃO: Submit usando API
+    form.addEventListener('submit', function(e) {
+        e.preventDefault();
+        
+        if (!validateForm()) {
+            return;
+        }
+        
+        const submitBtn = form.querySelector('button[type="submit"]');
+        const originalText = submitBtn.innerHTML;
+        
+        submitBtn.disabled = true;
+        submitBtn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Criando evento...';
+        
+        const hasImage = fileInput.files.length > 0;
+        if (hasImage) {
+            uploadProgress.style.display = 'block';
+        }
+        
+        const formData = new FormData(form);
+        
+        fetch('/api/create-event.php', {
+            method: 'POST',
+            body: formData
+        })
+        .then(response => {
+            if (!response.ok) {
+                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            }
+            return response.json();
+        })
+        .then(data => {
+            console.log('Resposta da API:', data);
+            
+            if (data.success) {
+                showToast(data.message, 'success');
+                
+                setTimeout(() => {
+                    if (data.redirect) {
+                        window.location.href = data.redirect;
+                    } else if (data.evento_id) {
+                        window.location.href = `view.php?id=${data.evento_id}`;
+                    } else {
+                        window.location.href = 'list.php';
+                    }
+                }, 2000);
+            } else {
+                throw new Error(data.message || 'Erro desconhecido');
+            }
+        })
+        .catch(error => {
+            console.error('Erro:', error);
+            showToast('Erro ao criar evento: ' + error.message, 'error');
+            
+            submitBtn.disabled = false;
+            submitBtn.innerHTML = originalText;
+            uploadProgress.style.display = 'none';
+        });
+    });
+
+    function validateForm() {
+        const titulo = document.getElementById('titulo').value.trim();
+        const descricao = document.getElementById('descricao').value.trim();
+        const dataInicio = document.getElementById('data_inicio').value;
+        const horarioInicio = document.getElementById('horario_inicio').value;
+        const localNome = document.getElementById('local_nome').value.trim();
+        const localEndereco = document.getElementById('local_endereco').value.trim();
+        const localCidade = document.getElementById('local_cidade').value.trim();
+        const localEstado = document.getElementById('local_estado').value;
+        
+        if (!titulo || !descricao || !dataInicio || !horarioInicio || 
+            !localNome || !localEndereco || !localCidade || !localEstado) {
+            showToast('Por favor, preencha todos os campos obrigatórios.', 'warning');
+            return false;
+        }
+        
+        const hoje = new Date().toISOString().split('T')[0];
+        if (dataInicio < hoje) {
+            showToast('A data do evento deve ser futura.', 'warning');
+            return false;
+        }
+        
+        if (!eventoGratuito.checked) {
+            const preco = document.getElementById('preco').value;
+            if (!preco || preco < 0) {
+                showToast('Por favor, informe o preço do evento.', 'warning');
+                return false;
+            }
+        }
+        
+        return true;
+    }
+
+    // Auto-hide alerts
+    const alerts = document.querySelectorAll('.alert');
+    alerts.forEach(alert => {
+        setTimeout(() => {
+            const bsAlert = bootstrap.Alert.getOrCreateInstance(alert);
+            if (bsAlert) {
+                bsAlert.close();
+            }
+        }, 7000);
+    });
+
+    window.showToast = function(message, type = 'info') {
+        const toast = document.createElement('div');
+        toast.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show position-fixed`;
+        toast.style.cssText = `
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            min-width: 300px;
+            max-width: 400px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+        `;
+        
+        toast.innerHTML = `
+            <i class="fas fa-${type === 'error' ? 'exclamation-circle' : type === 'success' ? 'check-circle' : 'info-circle'} me-2"></i>
+            ${message}
+            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+        `;
+
+        document.body.appendChild(toast);
+
+        setTimeout(() => {
+            if (toast.parentNode) {
+                toast.remove();
+            }
+        }, 4000);
+    };
+});
+</script>
+
+<?php
 </body>
 </html>

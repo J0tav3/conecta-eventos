@@ -1,14 +1,36 @@
 RewriteEngine On
 
-# Redirect to index.php if file doesn't exist
-RewriteCond %{REQUEST_FILENAME} !-f
-RewriteCond %{REQUEST_FILENAME} !-d
-RewriteRule ^(.*)$ index.php [QSA,L]
+# Redirecionar API calls
+RewriteRule ^api/create-event\.php$ /api/create-event.php [L]
+RewriteRule ^api/(.*)$ /api/$1 [L]
 
-# Security headers
+# Configurações PHP
+php_value upload_max_filesize 5M
+php_value post_max_size 6M
+php_value max_file_uploads 10
+php_value memory_limit 128M
+php_value max_execution_time 30
+
+# Headers de segurança
 Header always set X-Content-Type-Options nosniff
 Header always set X-Frame-Options DENY
 Header always set X-XSS-Protection "1; mode=block"
 
-# Hide PHP version
-Header unset X-Powered-By
+# Cache para uploads
+<FilesMatch "\.(jpg|jpeg|png|gif|webp)$">
+    ExpiresActive On
+    ExpiresDefault "access plus 1 month"
+    Header append Cache-Control "public"
+</FilesMatch>
+
+# Proteger arquivos
+<Files "config.php">
+    Order deny,allow
+    Deny from all
+</Files>
+
+<Files "database.php">
+    Order deny,allow
+    Deny from all
+</Files>
+?>
