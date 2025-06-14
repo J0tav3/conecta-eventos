@@ -1,6 +1,6 @@
 <?php
 // ========================================
-// PÁGINA DE CONFIGURAÇÕES DO PARTICIPANTE
+// PÁGINA DE CONFIGURAÇÕES DO PARTICIPANTE - ATUALIZADA
 // ========================================
 // Local: views/dashboard/participant-settings.php
 // ========================================
@@ -23,10 +23,19 @@ $title = "Configurações - Conecta Eventos";
 $userName = $_SESSION['user_name'] ?? 'Participante';
 $userEmail = $_SESSION['user_email'] ?? '';
 $userType = $_SESSION['user_type'] ?? 'participante';
+$userPhoto = $_SESSION['user_photo'] ?? null;
 
 // URLs
 $dashboardUrl = 'participant.php';
 $homeUrl = '../../index.php';
+
+// Função para gerar URL da foto de perfil
+function getProfilePhotoUrl($photoName) {
+    if (!$photoName) return null;
+    return 'https://conecta-eventos-production.up.railway.app/uploads/profiles/' . $photoName;
+}
+
+$profilePhotoUrl = getProfilePhotoUrl($userPhoto);
 
 $success_message = '';
 $error_message = '';
@@ -81,35 +90,6 @@ $user_data = [
     'empresa' => 'Tech Company',
     'linkedin' => 'https://linkedin.com/in/participante',
     'instagram' => '@participante'
-];
-
-// Configurações de notificação específicas para participantes
-$notification_settings = [
-    'email_novos_eventos' => true,
-    'email_eventos_favoritos' => true,
-    'email_lembretes' => true,
-    'email_promocoes' => false,
-    'sms_lembretes' => true,
-    'push_notifications' => true
-];
-
-// Configurações de privacidade
-$privacy_settings = [
-    'perfil_publico' => true,
-    'mostrar_email' => false,
-    'mostrar_telefone' => false,
-    'mostrar_participacoes' => true,
-    'receber_contato_organizadores' => true
-];
-
-// Preferências de eventos
-$event_preferences = [
-    'categorias_interesse' => ['Tecnologia', 'Design'],
-    'formato_preferido' => 'presencial',
-    'faixa_preco' => 'ate_100',
-    'horario_preferido' => 'noite',
-    'distancia_maxima' => '50',
-    'idioma_preferido' => 'portugues'
 ];
 ?>
 
@@ -208,6 +188,12 @@ $event_preferences = [
         .avatar-upload {
             position: relative;
             display: inline-block;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .avatar-upload:hover {
+            transform: translateY(-2px);
         }
 
         .avatar {
@@ -221,6 +207,17 @@ $event_preferences = [
             color: white;
             font-size: 3rem;
             font-weight: bold;
+            overflow: hidden;
+            position: relative;
+            border: 3px solid #fff;
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+
+        .avatar img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 50%;
         }
 
         .avatar-overlay {
@@ -229,7 +226,7 @@ $event_preferences = [
             left: 0;
             width: 100%;
             height: 100%;
-            background: rgba(0, 0, 0, 0.5);
+            background: rgba(0, 0, 0, 0.6);
             border-radius: 50%;
             display: flex;
             align-items: center;
@@ -243,112 +240,55 @@ $event_preferences = [
             opacity: 1;
         }
 
-        .switch {
-            position: relative;
-            display: inline-block;
-            width: 60px;
-            height: 34px;
+        .avatar.has-image {
+            border-color: var(--success-color);
         }
 
-        .switch input {
-            opacity: 0;
-            width: 0;
-            height: 0;
+        .photo-actions {
+            text-align: center;
+            margin-top: 1rem;
         }
 
-        .slider {
-            position: absolute;
-            cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #ccc;
-            transition: .4s;
-            border-radius: 34px;
+        .photo-info {
+            background: #f8f9fa;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-top: 1rem;
+            font-size: 0.9rem;
+            color: #6c757d;
         }
 
-        .slider:before {
-            position: absolute;
-            content: "";
-            height: 26px;
-            width: 26px;
-            left: 4px;
-            bottom: 4px;
-            background-color: white;
-            transition: .4s;
+        .navbar-user-photo, .sidebar-user-photo {
+            width: 40px;
+            height: 40px;
             border-radius: 50%;
-        }
-
-        input:checked + .slider {
-            background: linear-gradient(135deg, var(--primary-color) 0%, var(--secondary-color) 100%);
-        }
-
-        input:checked + .slider:before {
-            transform: translateX(26px);
-        }
-
-        .category-tag {
-            display: inline-block;
             background: var(--primary-color);
+            display: flex;
+            align-items: center;
+            justify-content: center;
             color: white;
-            padding: 0.5rem 1rem;
-            border-radius: 2rem;
-            margin: 0.25rem;
-            cursor: pointer;
-            transition: all 0.3s ease;
+            font-weight: bold;
+            overflow: hidden;
         }
 
-        .category-tag:hover {
-            background: var(--secondary-color);
-            transform: scale(1.05);
+        .navbar-user-photo img, .sidebar-user-photo img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
         }
 
-        .category-tag.selected {
-            background: var(--secondary-color);
-            box-shadow: 0 2px 10px rgba(23, 162, 184, 0.3);
-        }
-
-        .danger-zone {
-            border: 2px solid var(--danger-color);
-            border-radius: 1rem;
-            padding: 1.5rem;
-            background: #fff5f5;
+        .upload-progress {
+            margin-top: 1rem;
+            display: none;
         }
 
         .breadcrumb {
             background: transparent;
             padding: 0;
         }
-
-        .preferences-section {
-            background: #f8f9fa;
-            border-radius: 0.5rem;
-            padding: 1.5rem;
-            margin: 1rem 0;
-        }
-
-        .preference-item {
-            border: 2px solid #e9ecef;
-            border-radius: 0.5rem;
-            padding: 1rem;
-            margin: 0.5rem 0;
-            cursor: pointer;
-            transition: all 0.3s ease;
-        }
-
-        .preference-item:hover {
-            border-color: var(--primary-color);
-            background: rgba(40, 167, 69, 0.05);
-        }
-
-        .preference-item.selected {
-            border-color: var(--primary-color);
-            background: rgba(40, 167, 69, 0.1);
-        }
     </style>
 </head>
-<body>
+<body data-user-name="<?php echo htmlspecialchars($userName); ?>">
     <!-- Header -->
     <nav class="navbar navbar-expand-lg navbar-dark" style="background: linear-gradient(135deg, #28a745 0%, #17a2b8 100%);">
         <div class="container">
@@ -357,10 +297,19 @@ $event_preferences = [
                 <strong>Conecta Eventos</strong>
             </a>
             
-            <div class="navbar-nav ms-auto">
-                <span class="navbar-text me-3">
-                    Olá, <?php echo htmlspecialchars($userName); ?>!
-                </span>
+            <div class="navbar-nav ms-auto d-flex align-items-center">
+                <div class="d-flex align-items-center me-3">
+                    <div class="navbar-user-photo me-2">
+                        <?php if ($profilePhotoUrl): ?>
+                            <img src="<?php echo $profilePhotoUrl; ?>" alt="Foto de Perfil">
+                        <?php else: ?>
+                            <?php echo strtoupper(substr($userName, 0, 1)); ?>
+                        <?php endif; ?>
+                    </div>
+                    <span class="navbar-text">
+                        Olá, <?php echo htmlspecialchars($userName); ?>!
+                    </span>
+                </div>
                 <a class="nav-link" href="<?php echo $dashboardUrl; ?>">Meu Painel</a>
                 <a class="nav-link" href="../../logout.php">Sair</a>
             </div>
@@ -471,16 +420,6 @@ $event_preferences = [
                                 <i class="fas fa-eye me-2"></i>Privacidade
                             </button>
                         </li>
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link w-100 text-start" 
-                                    id="danger-tab" 
-                                    data-bs-toggle="pill" 
-                                    data-bs-target="#danger" 
-                                    type="button" 
-                                    role="tab">
-                                <i class="fas fa-exclamation-triangle me-2"></i>Zona de Perigo
-                            </button>
-                        </li>
                     </ul>
                 </div>
             </div>
@@ -495,37 +434,104 @@ $event_preferences = [
                                 <h4 class="mb-0">
                                     <i class="fas fa-user me-2"></i>Informações do Perfil
                                 </h4>
-                                <p class="mb-0 text-muted">Atualize suas informações pessoais</p>
+                                <p class="mb-0 text-muted">Atualize suas informações pessoais e foto de perfil</p>
                             </div>
                             <div class="settings-body">
-                                <form method="POST">
-                                    <input type="hidden" name="action" value="update_profile">
-                                    
-                                    <!-- Avatar -->
-                                    <div class="text-center mb-4">
+                                <!-- Seção da Foto de Perfil -->
+                                <div class="row mb-5">
+                                    <div class="col-md-4 text-center">
                                         <div class="avatar-upload">
-                                            <div class="avatar">
-                                                <?php echo strtoupper(substr($userName, 0, 1)); ?>
+                                            <div class="avatar <?php echo $profilePhotoUrl ? 'has-image' : ''; ?>">
+                                                <?php if ($profilePhotoUrl): ?>
+                                                    <img src="<?php echo $profilePhotoUrl; ?>" alt="Foto de Perfil">
+                                                <?php else: ?>
+                                                    <?php echo strtoupper(substr($userName, 0, 1)); ?>
+                                                <?php endif; ?>
                                             </div>
                                             <div class="avatar-overlay">
                                                 <i class="fas fa-camera text-white fa-lg"></i>
                                             </div>
-                                            <input type="file" id="avatar" name="avatar" style="display: none;" accept="image/*">
+                                            <input type="file" id="avatar" name="avatar" style="display: none;" 
+                                                   accept="image/*" data-max-size="2048">
                                         </div>
-                                        <p class="mt-2 text-muted">Clique para alterar foto</p>
+                                        
+                                        <div class="photo-actions">
+                                            <p class="text-muted small mb-2">
+                                                Clique na foto para alterar<br>
+                                                ou arraste uma imagem
+                                            </p>
+                                            
+                                            <?php if ($profilePhotoUrl): ?>
+                                                <button type="button" id="removePhotoBtn" class="btn btn-sm btn-outline-danger">
+                                                    <i class="fas fa-trash me-1"></i>Remover Foto
+                                                </button>
+                                            <?php endif; ?>
+                                        </div>
+                                        
+                                        <div class="photo-info">
+                                            <div class="d-flex justify-content-between mb-1">
+                                                <small>Tamanho máximo:</small>
+                                                <small><strong>2MB</strong></small>
+                                            </div>
+                                            <div class="d-flex justify-content-between mb-1">
+                                                <small>Formatos aceitos:</small>
+                                                <small><strong>JPG, PNG, GIF, WebP</strong></small>
+                                            </div>
+                                            <div class="d-flex justify-content-between">
+                                                <small>Dimensão recomendada:</small>
+                                                <small><strong>300x300px</strong></small>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="upload-progress">
+                                            <div class="progress">
+                                                <div class="progress-bar progress-bar-striped progress-bar-animated" 
+                                                     role="progressbar" style="width: 0%"></div>
+                                            </div>
+                                            <small class="text-muted mt-1 d-block">Fazendo upload...</small>
+                                        </div>
                                     </div>
+                                    
+                                    <div class="col-md-8">
+                                        <h5 class="mb-3">Personalize seu Perfil:</h5>
+                                        <ul class="list-unstyled">
+                                            <li class="mb-2">
+                                                <i class="fas fa-check text-success me-2"></i>
+                                                Uma boa foto ajuda outros participantes a te reconhecerem
+                                            </li>
+                                            <li class="mb-2">
+                                                <i class="fas fa-check text-success me-2"></i>
+                                                Preencha sua biografia para se conectar melhor
+                                            </li>
+                                            <li class="mb-2">
+                                                <i class="fas fa-check text-success me-2"></i>
+                                                Adicione suas redes sociais para networking
+                                            </li>
+                                            <li class="mb-2">
+                                                <i class="fas fa-info text-info me-2"></i>
+                                                Suas informações podem ser vistas por organizadores
+                                            </li>
+                                        </ul>
+                                    </div>
+                                </div>
+                                
+                                <hr class="my-4">
+                                
+                                <!-- Formulário de Dados Pessoais -->
+                                <form method="POST">
+                                    <input type="hidden" name="action" value="update_profile">
                                     
                                     <div class="row">
                                         <div class="col-md-6 mb-3">
                                             <label for="nome" class="form-label">Nome Completo</label>
                                             <input type="text" class="form-control" id="nome" name="nome" 
-                                                   value="<?php echo htmlspecialchars($user_data['nome']); ?>">
+                                                   value="<?php echo htmlspecialchars($user_data['nome']); ?>" required>
                                         </div>
                                         
                                         <div class="col-md-6 mb-3">
                                             <label for="email" class="form-label">E-mail</label>
                                             <input type="email" class="form-control" id="email" name="email" 
-                                                   value="<?php echo htmlspecialchars($user_data['email']); ?>">
+                                                   value="<?php echo htmlspecialchars($user_data['email']); ?>" required>
                                         </div>
                                     </div>
                                     
@@ -567,7 +573,6 @@ $event_preferences = [
                                                 <option value="RJ" <?php echo $user_data['estado'] === 'RJ' ? 'selected' : ''; ?>>Rio de Janeiro</option>
                                                 <option value="MG" <?php echo $user_data['estado'] === 'MG' ? 'selected' : ''; ?>>Minas Gerais</option>
                                                 <option value="RS" <?php echo $user_data['estado'] === 'RS' ? 'selected' : ''; ?>>Rio Grande do Sul</option>
-                                                <!-- Adicionar outros estados conforme necessário -->
                                             </select>
                                         </div>
                                     </div>
@@ -625,175 +630,7 @@ $event_preferences = [
                                 <p class="mb-0 text-muted">Configure suas preferências para receber recomendações personalizadas</p>
                             </div>
                             <div class="settings-body">
-                                <form method="POST">
-                                    <input type="hidden" name="action" value="update_preferences">
-                                    
-                                    <!-- Categorias de Interesse -->
-                                    <div class="preferences-section">
-                                        <h5 class="mb-3">Categorias de Interesse</h5>
-                                        <p class="text-muted mb-3">Selecione as categorias de eventos que mais te interessam:</p>
-                                        <div class="row">
-                                            <?php
-                                            $categorias = ['Tecnologia', 'Design', 'Negócios', 'Marketing', 'Educação', 
-                                                         'Arte e Cultura', 'Esportes', 'Música', 'Culinária', 'Saúde'];
-                                            foreach ($categorias as $categoria):
-                                            ?>
-                                                <div class="col-md-6 col-lg-4 mb-2">
-                                                    <div class="preference-item <?php echo in_array($categoria, $event_preferences['categorias_interesse']) ? 'selected' : ''; ?>" 
-                                                         onclick="toggleCategory(this, '<?php echo $categoria; ?>')">
-                                                        <i class="fas fa-tag me-2"></i>
-                                                        <?php echo $categoria; ?>
-                                                        <input type="checkbox" name="categorias_interesse[]" 
-                                                               value="<?php echo $categoria; ?>" 
-                                                               style="display: none;"
-                                                               <?php echo in_array($categoria, $event_preferences['categorias_interesse']) ? 'checked' : ''; ?>>
-                                                    </div>
-                                                </div>
-                                            <?php endforeach; ?>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Formato Preferido -->
-                                    <div class="preferences-section">
-                                        <h5 class="mb-3">Formato Preferido</h5>
-                                        <div class="row">
-                                            <div class="col-md-4 mb-2">
-                                                <div class="preference-item <?php echo $event_preferences['formato_preferido'] === 'presencial' ? 'selected' : ''; ?>" 
-                                                     onclick="selectOption(this, 'formato_preferido', 'presencial')">
-                                                    <i class="fas fa-users me-2"></i>
-                                                    Presencial
-                                                    <input type="radio" name="formato_preferido" value="presencial" style="display: none;"
-                                                           <?php echo $event_preferences['formato_preferido'] === 'presencial' ? 'checked' : ''; ?>>
-                                                </div>
-                                            </div>
-                                            <div class="col-md-4 mb-2">
-                                                <div class="preference-item <?php echo $event_preferences['formato_preferido'] === 'online' ? 'selected' : ''; ?>" 
-                                                     onclick="selectOption(this, 'formato_preferido', 'online')">
-                                                    <i class="fas fa-laptop me-2"></i>
-                                                    Online
-                                                    <input type="radio" name="formato_preferido" value="online" style="display: none;"
-                                                           <?php echo $event_preferences['formato_preferido'] === 'online' ? 'checked' : ''; ?>>
-                                                </div>
-                                            </div>
-                                            <div class="col-md-4 mb-2">
-                                                <div class="preference-item <?php echo $event_preferences['formato_preferido'] === 'hibrido' ? 'selected' : ''; ?>" 
-                                                     onclick="selectOption(this, 'formato_preferido', 'hibrido')">
-                                                    <i class="fas fa-globe me-2"></i>
-                                                    Híbrido
-                                                    <input type="radio" name="formato_preferido" value="hibrido" style="display: none;"
-                                                           <?php echo $event_preferences['formato_preferido'] === 'hibrido' ? 'checked' : ''; ?>>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Faixa de Preço -->
-                                    <div class="preferences-section">
-                                        <h5 class="mb-3">Faixa de Preço Preferida</h5>
-                                        <div class="row">
-                                            <div class="col-md-3 mb-2">
-                                                <div class="preference-item <?php echo $event_preferences['faixa_preco'] === 'gratuito' ? 'selected' : ''; ?>" 
-                                                     onclick="selectOption(this, 'faixa_preco', 'gratuito')">
-                                                    <i class="fas fa-gift me-2"></i>
-                                                    Gratuito
-                                                    <input type="radio" name="faixa_preco" value="gratuito" style="display: none;"
-                                                           <?php echo $event_preferences['faixa_preco'] === 'gratuito' ? 'checked' : ''; ?>>
-                                                </div>
-                                            </div>
-                                            <div class="col-md-3 mb-2">
-                                                <div class="preference-item <?php echo $event_preferences['faixa_preco'] === 'ate_50' ? 'selected' : ''; ?>" 
-                                                     onclick="selectOption(this, 'faixa_preco', 'ate_50')">
-                                                    <i class="fas fa-dollar-sign me-2"></i>
-                                                    Até R$ 50
-                                                    <input type="radio" name="faixa_preco" value="ate_50" style="display: none;"
-                                                           <?php echo $event_preferences['faixa_preco'] === 'ate_50' ? 'checked' : ''; ?>>
-                                                </div>
-                                            </div>
-                                            <div class="col-md-3 mb-2">
-                                                <div class="preference-item <?php echo $event_preferences['faixa_preco'] === 'ate_100' ? 'selected' : ''; ?>" 
-                                                     onclick="selectOption(this, 'faixa_preco', 'ate_100')">
-                                                    <i class="fas fa-coins me-2"></i>
-                                                    Até R$ 100
-                                                    <input type="radio" name="faixa_preco" value="ate_100" style="display: none;"
-                                                           <?php echo $event_preferences['faixa_preco'] === 'ate_100' ? 'checked' : ''; ?>>
-                                                </div>
-                                            </div>
-                                            <div class="col-md-3 mb-2">
-                                                <div class="preference-item <?php echo $event_preferences['faixa_preco'] === 'acima_100' ? 'selected' : ''; ?>" 
-                                                     onclick="selectOption(this, 'faixa_preco', 'acima_100')">
-                                                    <i class="fas fa-credit-card me-2"></i>
-                                                    Acima de R$ 100
-                                                    <input type="radio" name="faixa_preco" value="acima_100" style="display: none;"
-                                                           <?php echo $event_preferences['faixa_preco'] === 'acima_100' ? 'checked' : ''; ?>>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Horário Preferido -->
-                                    <div class="preferences-section">
-                                        <h5 class="mb-3">Horário Preferido</h5>
-                                        <div class="row">
-                                            <div class="col-md-4 mb-2">
-                                                <div class="preference-item <?php echo $event_preferences['horario_preferido'] === 'manha' ? 'selected' : ''; ?>" 
-                                                     onclick="selectOption(this, 'horario_preferido', 'manha')">
-                                                    <i class="fas fa-sun me-2"></i>
-                                                    Manhã (8h-12h)
-                                                    <input type="radio" name="horario_preferido" value="manha" style="display: none;"
-                                                           <?php echo $event_preferences['horario_preferido'] === 'manha' ? 'checked' : ''; ?>>
-                                                </div>
-                                            </div>
-                                            <div class="col-md-4 mb-2">
-                                                <div class="preference-item <?php echo $event_preferences['horario_preferido'] === 'tarde' ? 'selected' : ''; ?>" 
-                                                     onclick="selectOption(this, 'horario_preferido', 'tarde')">
-                                                    <i class="fas fa-cloud-sun me-2"></i>
-                                                    Tarde (12h-18h)
-                                                    <input type="radio" name="horario_preferido" value="tarde" style="display: none;"
-                                                           <?php echo $event_preferences['horario_preferido'] === 'tarde' ? 'checked' : ''; ?>>
-                                                </div>
-                                            </div>
-                                            <div class="col-md-4 mb-2">
-                                                <div class="preference-item <?php echo $event_preferences['horario_preferido'] === 'noite' ? 'selected' : ''; ?>" 
-                                                     onclick="selectOption(this, 'horario_preferido', 'noite')">
-                                                    <i class="fas fa-moon me-2"></i>
-                                                    Noite (18h-22h)
-                                                    <input type="radio" name="horario_preferido" value="noite" style="display: none;"
-                                                           <?php echo $event_preferences['horario_preferido'] === 'noite' ? 'checked' : ''; ?>>
-                                                </div>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <!-- Distância Máxima -->
-                                    <div class="row">
-                                        <div class="col-md-6 mb-3">
-                                            <label for="distancia_maxima" class="form-label">Distância Máxima (km)</label>
-                                            <select class="form-select" id="distancia_maxima" name="distancia_maxima">
-                                                <option value="10" <?php echo $event_preferences['distancia_maxima'] === '10' ? 'selected' : ''; ?>>Até 10 km</option>
-                                                <option value="25" <?php echo $event_preferences['distancia_maxima'] === '25' ? 'selected' : ''; ?>>Até 25 km</option>
-                                                <option value="50" <?php echo $event_preferences['distancia_maxima'] === '50' ? 'selected' : ''; ?>>Até 50 km</option>
-                                                <option value="100" <?php echo $event_preferences['distancia_maxima'] === '100' ? 'selected' : ''; ?>>Até 100 km</option>
-                                                <option value="sem_limite" <?php echo $event_preferences['distancia_maxima'] === 'sem_limite' ? 'selected' : ''; ?>>Sem limite</option>
-                                            </select>
-                                        </div>
-                                        
-                                        <div class="col-md-6 mb-3">
-                                            <label for="idioma_preferido" class="form-label">Idioma Preferido</label>
-                                            <select class="form-select" id="idioma_preferido" name="idioma_preferido">
-                                                <option value="portugues" <?php echo $event_preferences['idioma_preferido'] === 'portugues' ? 'selected' : ''; ?>>Português</option>
-                                                <option value="ingles" <?php echo $event_preferences['idioma_preferido'] === 'ingles' ? 'selected' : ''; ?>>Inglês</option>
-                                                <option value="espanhol" <?php echo $event_preferences['idioma_preferido'] === 'espanhol' ? 'selected' : ''; ?>>Espanhol</option>
-                                                <option value="qualquer" <?php echo $event_preferences['idioma_preferido'] === 'qualquer' ? 'selected' : ''; ?>>Qualquer idioma</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="text-end">
-                                        <button type="submit" class="btn btn-primary">
-                                            <i class="fas fa-save me-2"></i>Salvar Preferências
-                                        </button>
-                                    </div>
-                                </form>
+                                <p>Configurações de preferências de eventos em desenvolvimento...</p>
                             </div>
                         </div>
                     </div>
@@ -808,61 +645,7 @@ $event_preferences = [
                                 <p class="mb-0 text-muted">Configure senha e autenticação</p>
                             </div>
                             <div class="settings-body">
-                                <!-- Alterar Senha -->
-                                <h5 class="mb-3">Alterar Senha</h5>
-                                <form method="POST" class="mb-4">
-                                    <input type="hidden" name="action" value="change_password">
-                                    
-                                    <div class="mb-3">
-                                        <label for="current_password" class="form-label">Senha Atual</label>
-                                        <input type="password" class="form-control" id="current_password" name="current_password" required>
-                                    </div>
-                                    
-                                    <div class="row">
-                                        <div class="col-md-6 mb-3">
-                                            <label for="new_password" class="form-label">Nova Senha</label>
-                                            <input type="password" class="form-control" id="new_password" name="new_password" required>
-                                        </div>
-                                        
-                                        <div class="col-md-6 mb-3">
-                                            <label for="confirm_password" class="form-label">Confirmar Nova Senha</label>
-                                            <input type="password" class="form-control" id="confirm_password" name="confirm_password" required>
-                                        </div>
-                                    </div>
-                                    
-                                    <button type="submit" class="btn btn-primary">
-                                        <i class="fas fa-key me-2"></i>Alterar Senha
-                                    </button>
-                                </form>
-                                
-                                <hr>
-                                
-                                <!-- Autenticação de Dois Fatores -->
-                                <h5 class="mb-3">Autenticação de Dois Fatores</h5>
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <p class="mb-1">Adicione uma camada extra de segurança</p>
-                                        <small class="text-muted">Requer código do seu celular para fazer login</small>
-                                    </div>
-                                    <button class="btn btn-outline-primary" onclick="alert('Em desenvolvimento!')">
-                                        <i class="fas fa-mobile-alt me-2"></i>Configurar
-                                    </button>
-                                </div>
-                                
-                                <hr>
-                                
-                                <!-- Sessões Ativas -->
-                                <h5 class="mb-3">Sessões Ativas</h5>
-                                <div class="list-group">
-                                    <div class="list-group-item d-flex justify-content-between align-items-center">
-                                        <div>
-                                            <h6 class="mb-1">Navegador Atual</h6>
-                                            <p class="mb-1 text-muted">Chrome on Windows</p>
-                                            <small class="text-success">Ativo agora</small>
-                                        </div>
-                                        <span class="badge bg-success">Atual</span>
-                                    </div>
-                                </div>
+                                <p>Funcionalidades de segurança em desenvolvimento...</p>
                             </div>
                         </div>
                     </div>
@@ -877,93 +660,7 @@ $event_preferences = [
                                 <p class="mb-0 text-muted">Escolha como deseja ser notificado sobre eventos</p>
                             </div>
                             <div class="settings-body">
-                                <form method="POST">
-                                    <input type="hidden" name="action" value="update_notifications">
-                                    
-                                    <h5 class="mb-3">E-mail</h5>
-                                    
-                                    <div class="d-flex justify-content-between align-items-center mb-3">
-                                        <div>
-                                            <p class="mb-0">Novos eventos nas suas categorias de interesse</p>
-                                            <small class="text-muted">Receba notificações quando novos eventos forem publicados</small>
-                                        </div>
-                                        <label class="switch">
-                                            <input type="checkbox" name="email_novos_eventos" 
-                                                   <?php echo $notification_settings['email_novos_eventos'] ? 'checked' : ''; ?>>
-                                            <span class="slider"></span>
-                                        </label>
-                                    </div>
-                                    
-                                    <div class="d-flex justify-content-between align-items-center mb-3">
-                                        <div>
-                                            <p class="mb-0">Atualizações dos eventos favoritos</p>
-                                            <small class="text-muted">Mudanças em eventos que você favoritou</small>
-                                        </div>
-                                        <label class="switch">
-                                            <input type="checkbox" name="email_eventos_favoritos" 
-                                                   <?php echo $notification_settings['email_eventos_favoritos'] ? 'checked' : ''; ?>>
-                                            <span class="slider"></span>
-                                        </label>
-                                    </div>
-                                    
-                                    <div class="d-flex justify-content-between align-items-center mb-3">
-                                        <div>
-                                            <p class="mb-0">Lembretes de eventos próximos</p>
-                                            <small class="text-muted">Lembrete 24h antes do evento</small>
-                                        </div>
-                                        <label class="switch">
-                                            <input type="checkbox" name="email_lembretes" 
-                                                   <?php echo $notification_settings['email_lembretes'] ? 'checked' : ''; ?>>
-                                            <span class="slider"></span>
-                                        </label>
-                                    </div>
-                                    
-                                    <div class="d-flex justify-content-between align-items-center mb-4">
-                                        <div>
-                                            <p class="mb-0">Promoções e eventos especiais</p>
-                                            <small class="text-muted">Ofertas especiais e eventos promocionais</small>
-                                        </div>
-                                        <label class="switch">
-                                            <input type="checkbox" name="email_promocoes" 
-                                                   <?php echo $notification_settings['email_promocoes'] ? 'checked' : ''; ?>>
-                                            <span class="slider"></span>
-                                        </label>
-                                    </div>
-                                    
-                                    <hr>
-                                    
-                                    <h5 class="mb-3">SMS e Push</h5>
-                                    
-                                    <div class="d-flex justify-content-between align-items-center mb-3">
-                                        <div>
-                                            <p class="mb-0">Lembretes por SMS</p>
-                                            <small class="text-muted">SMS 2h antes do início do evento</small>
-                                        </div>
-                                        <label class="switch">
-                                            <input type="checkbox" name="sms_lembretes" 
-                                                   <?php echo $notification_settings['sms_lembretes'] ? 'checked' : ''; ?>>
-                                            <span class="slider"></span>
-                                        </label>
-                                    </div>
-                                    
-                                    <div class="d-flex justify-content-between align-items-center mb-4">
-                                        <div>
-                                            <p class="mb-0">Notificações Push</p>
-                                            <small class="text-muted">Notificações instantâneas no navegador</small>
-                                        </div>
-                                        <label class="switch">
-                                            <input type="checkbox" name="push_notifications" 
-                                                   <?php echo $notification_settings['push_notifications'] ? 'checked' : ''; ?>>
-                                            <span class="slider"></span>
-                                        </label>
-                                    </div>
-                                    
-                                    <div class="text-end">
-                                        <button type="submit" class="btn btn-primary">
-                                            <i class="fas fa-save me-2"></i>Salvar Preferências
-                                        </button>
-                                    </div>
-                                </form>
+                                <p>Configurações de notificação em desenvolvimento...</p>
                             </div>
                         </div>
                     </div>
@@ -978,132 +675,7 @@ $event_preferences = [
                                 <p class="mb-0 text-muted">Controle a visibilidade das suas informações</p>
                             </div>
                             <div class="settings-body">
-                                <form method="POST">
-                                    <input type="hidden" name="action" value="update_privacy">
-                                    
-                                    <div class="d-flex justify-content-between align-items-center mb-3">
-                                        <div>
-                                            <p class="mb-0">Perfil Público</p>
-                                            <small class="text-muted">Permitir que outros participantes vejam seu perfil</small>
-                                        </div>
-                                        <label class="switch">
-                                            <input type="checkbox" name="perfil_publico" 
-                                                   <?php echo $privacy_settings['perfil_publico'] ? 'checked' : ''; ?>>
-                                            <span class="slider"></span>
-                                        </label>
-                                    </div>
-                                    
-                                    <div class="d-flex justify-content-between align-items-center mb-3">
-                                        <div>
-                                            <p class="mb-0">Mostrar E-mail</p>
-                                            <small class="text-muted">Exibir e-mail no seu perfil público</small>
-                                        </div>
-                                        <label class="switch">
-                                            <input type="checkbox" name="mostrar_email" 
-                                                   <?php echo $privacy_settings['mostrar_email'] ? 'checked' : ''; ?>>
-                                            <span class="slider"></span>
-                                        </label>
-                                    </div>
-                                    
-                                    <div class="d-flex justify-content-between align-items-center mb-3">
-                                        <div>
-                                            <p class="mb-0">Mostrar Telefone</p>
-                                            <small class="text-muted">Exibir telefone no seu perfil público</small>
-                                        </div>
-                                        <label class="switch">
-                                            <input type="checkbox" name="mostrar_telefone" 
-                                                   <?php echo $privacy_settings['mostrar_telefone'] ? 'checked' : ''; ?>>
-                                            <span class="slider"></span>
-                                        </label>
-                                    </div>
-                                    
-                                    <div class="d-flex justify-content-between align-items-center mb-3">
-                                        <div>
-                                            <p class="mb-0">Mostrar Participações</p>
-                                            <small class="text-muted">Exibir eventos que você participou no seu perfil</small>
-                                        </div>
-                                        <label class="switch">
-                                            <input type="checkbox" name="mostrar_participacoes" 
-                                                   <?php echo $privacy_settings['mostrar_participacoes'] ? 'checked' : ''; ?>>
-                                            <span class="slider"></span>
-                                        </label>
-                                    </div>
-                                    
-                                    <div class="d-flex justify-content-between align-items-center mb-4">
-                                        <div>
-                                            <p class="mb-0">Receber Contato de Organizadores</p>
-                                            <small class="text-muted">Permitir que organizadores entrem em contato</small>
-                                        </div>
-                                        <label class="switch">
-                                            <input type="checkbox" name="receber_contato_organizadores" 
-                                                   <?php echo $privacy_settings['receber_contato_organizadores'] ? 'checked' : ''; ?>>
-                                            <span class="slider"></span>
-                                        </label>
-                                    </div>
-                                    
-                                    <div class="text-end">
-                                        <button type="submit" class="btn btn-primary">
-                                            <i class="fas fa-save me-2"></i>Salvar Configurações
-                                        </button>
-                                    </div>
-                                </form>
-                            </div>
-                        </div>
-                    </div>
-
-                    <!-- Zona de Perigo -->
-                    <div class="tab-pane fade" id="danger" role="tabpanel">
-                        <div class="settings-card">
-                            <div class="settings-header">
-                                <h4 class="mb-0 text-danger">
-                                    <i class="fas fa-exclamation-triangle me-2"></i>Zona de Perigo
-                                </h4>
-                                <p class="mb-0 text-muted">Ações irreversíveis que afetam sua conta</p>
-                            </div>
-                            <div class="settings-body">
-                                <!-- Exportar Dados -->
-                                <div class="danger-zone mb-4">
-                                    <h5 class="text-info">Exportar Dados</h5>
-                                    <p class="mb-3">Baixe uma cópia de todos os seus dados na plataforma, incluindo inscrições, favoritos e histórico de participações.</p>
-                                    <button class="btn btn-outline-info" onclick="exportData()">
-                                        <i class="fas fa-download me-2"></i>Exportar Meus Dados
-                                    </button>
-                                </div>
-                                
-                                <!-- Cancelar Todas as Inscrições -->
-                                <div class="danger-zone mb-4">
-                                    <h5 class="text-warning">Cancelar Todas as Inscrições</h5>
-                                    <p class="mb-3">Cancela todas as suas inscrições em eventos futuros. Esta ação pode afetar organizadores e outros participantes.</p>
-                                    <button class="btn btn-warning" onclick="cancelAllSubscriptions()">
-                                        <i class="fas fa-calendar-times me-2"></i>Cancelar Todas as Inscrições
-                                    </button>
-                                </div>
-                                
-                                <!-- Desativar Conta -->
-                                <div class="danger-zone mb-4">
-                                    <h5 class="text-warning">Desativar Conta</h5>
-                                    <p class="mb-3">Sua conta será desativada temporariamente. Você pode reativá-la a qualquer momento fazendo login novamente.</p>
-                                    <button class="btn btn-warning" onclick="deactivateAccount()">
-                                        <i class="fas fa-pause me-2"></i>Desativar Conta
-                                    </button>
-                                </div>
-                                
-                                <!-- Excluir Conta -->
-                                <div class="danger-zone">
-                                    <h5 class="text-danger">Excluir Conta Permanentemente</h5>
-                                    <p class="mb-3">
-                                        <strong>ATENÇÃO:</strong> Esta ação é irreversível. Todos os seus dados, inscrições, favoritos e histórico serão permanentemente removidos.
-                                    </p>
-                                    <div class="form-check mb-3">
-                                        <input class="form-check-input" type="checkbox" id="confirmDelete">
-                                        <label class="form-check-label" for="confirmDelete">
-                                            Eu entendo que esta ação é irreversível e cancelará todas as minhas inscrições
-                                        </label>
-                                    </div>
-                                    <button class="btn btn-danger" onclick="deleteAccount()" disabled id="deleteBtn">
-                                        <i class="fas fa-trash me-2"></i>Excluir Conta Permanentemente
-                                    </button>
-                                </div>
+                                <p>Configurações de privacidade em desenvolvimento...</p>
                             </div>
                         </div>
                     </div>
@@ -1114,23 +686,12 @@ $event_preferences = [
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
+    <!-- JavaScript para Upload de Foto de Perfil -->
+    <script src="../../public/js/profile-photo.js"></script>
+    
+    <!-- Outros scripts específicos da página -->
     <script>
         document.addEventListener('DOMContentLoaded', function() {
-            // Avatar upload
-            document.querySelector('.avatar-overlay').addEventListener('click', function() {
-                document.getElementById('avatar').click();
-            });
-            
-            document.getElementById('avatar').addEventListener('change', function() {
-                if (this.files && this.files[0]) {
-                    const reader = new FileReader();
-                    reader.onload = function(e) {
-                        showToast('Imagem selecionada! Funcionalidade de upload em desenvolvimento.', 'info');
-                    };
-                    reader.readAsDataURL(this.files[0]);
-                }
-            });
-            
             // Máscara de telefone
             const telefoneInput = document.getElementById('telefone');
             if (telefoneInput) {
@@ -1139,33 +700,6 @@ $event_preferences = [
                     value = value.replace(/(\d{2})(\d)/, '($1) $2');
                     value = value.replace(/(\d{5})(\d)/, '$1-$2');
                     e.target.value = value;
-                });
-            }
-            
-            // Validação de senhas
-            const newPassword = document.getElementById('new_password');
-            const confirmPassword = document.getElementById('confirm_password');
-            
-            if (newPassword && confirmPassword) {
-                function validatePasswords() {
-                    if (newPassword.value !== confirmPassword.value) {
-                        confirmPassword.setCustomValidity('As senhas não coincidem');
-                    } else {
-                        confirmPassword.setCustomValidity('');
-                    }
-                }
-                
-                newPassword.addEventListener('change', validatePasswords);
-                confirmPassword.addEventListener('keyup', validatePasswords);
-            }
-            
-            // Checkbox para habilitar botão de exclusão
-            const confirmDelete = document.getElementById('confirmDelete');
-            const deleteBtn = document.getElementById('deleteBtn');
-            
-            if (confirmDelete && deleteBtn) {
-                confirmDelete.addEventListener('change', function() {
-                    deleteBtn.disabled = !this.checked;
                 });
             }
             
@@ -1200,98 +734,6 @@ $event_preferences = [
             });
         });
         
-        // Função para toggle de categorias
-        function toggleCategory(element, category) {
-            element.classList.toggle('selected');
-            const checkbox = element.querySelector('input[type="checkbox"]');
-            checkbox.checked = element.classList.contains('selected');
-        }
-        
-        // Função para seleção única
-        function selectOption(element, name, value) {
-            // Remove seleção de todos os elementos do mesmo grupo
-            const group = document.querySelectorAll(`input[name="${name}"]`);
-            group.forEach(input => {
-                input.closest('.preference-item').classList.remove('selected');
-                input.checked = false;
-            });
-            
-            // Adiciona seleção ao elemento clicado
-            element.classList.add('selected');
-            const radio = element.querySelector('input[type="radio"]');
-            radio.checked = true;
-        }
-        
-        // Função para exportar dados
-        function exportData() {
-            if (confirm('Deseja exportar todos os seus dados? Você receberá um link para download por email.')) {
-                showToast('Solicitação de exportação enviada! Você receberá um email em breve.', 'info');
-            }
-        }
-        
-        // Função para cancelar todas as inscrições
-        function cancelAllSubscriptions() {
-            if (confirm('Tem certeza que deseja cancelar TODAS as suas inscrições em eventos futuros? Esta ação pode afetar organizadores e outros participantes.')) {
-                if (confirm('CONFIRMAÇÃO FINAL: Esta ação cancelará todas as suas inscrições futuras. Continuar?')) {
-                    showToast('Funcionalidade em desenvolvimento', 'warning');
-                }
-            }
-        }
-        
-        // Função para desativar conta
-        function deactivateAccount() {
-            if (confirm('Tem certeza que deseja desativar sua conta? Suas inscrições em eventos futuros serão mantidas, mas você não receberá notificações.')) {
-                showToast('Funcionalidade em desenvolvimento', 'warning');
-            }
-        }
-        
-        // Função para excluir conta
-        function deleteAccount() {
-            const confirmText = prompt('Para confirmar a exclusão, digite "EXCLUIR" em letras maiúsculas:');
-            if (confirmText === 'EXCLUIR') {
-                if (confirm('ÚLTIMA CONFIRMAÇÃO: Tem certeza absoluta que deseja excluir permanentemente sua conta? Todas as suas inscrições serão canceladas.')) {
-                    showToast('Funcionalidade em desenvolvimento', 'danger');
-                }
-            } else if (confirmText !== null) {
-                alert('Texto de confirmação incorreto. Conta não foi excluída.');
-            }
-        }
-        
-        // Sistema de toast notifications
-        function showToast(message, type = 'info') {
-            const toast = document.createElement('div');
-            toast.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show position-fixed`;
-            toast.style.cssText = `
-                top: 20px;
-                right: 20px;
-                z-index: 9999;
-                min-width: 300px;
-                max-width: 400px;
-                box-shadow: 0 4px 15px rgba(0,0,0,0.2);
-            `;
-            
-            const icons = {
-                success: 'fas fa-check-circle',
-                info: 'fas fa-info-circle',
-                warning: 'fas fa-exclamation-triangle',
-                danger: 'fas fa-exclamation-circle'
-            };
-            
-            toast.innerHTML = `
-                <i class="${icons[type] || icons.info} me-2"></i>
-                ${message}
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            `;
-
-            document.body.appendChild(toast);
-
-            setTimeout(() => {
-                if (toast.parentNode) {
-                    toast.remove();
-                }
-            }, 5000);
-        }
-        
         // Smooth scroll para tabs
         document.querySelectorAll('.nav-link').forEach(link => {
             link.addEventListener('click', function() {
@@ -1303,93 +745,6 @@ $event_preferences = [
                 }, 100);
             });
         });
-        
-        // Feedback visual ao salvar preferências
-        document.querySelectorAll('form').forEach(form => {
-            form.addEventListener('submit', function(e) {
-                const action = form.querySelector('input[name="action"]').value;
-                
-                if (action === 'update_preferences') {
-                    e.preventDefault();
-                    
-                    // Simular salvamento
-                    setTimeout(() => {
-                        showToast('Preferências salvas! Você receberá recomendações personalizadas baseadas nas suas escolhas.', 'success');
-                    }, 1000);
-                }
-            });
-        });
-        
-        // Inicializar tooltips para elementos que precisam de explicação
-        const tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
-        const tooltipList = tooltipTriggerList.map(function (tooltipTriggerEl) {
-            return new bootstrap.Tooltip(tooltipTriggerEl);
-        });
-        
-        // Animação de entrada das seções de preferências
-        const preferencesSections = document.querySelectorAll('.preferences-section');
-        const observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    entry.target.style.animation = 'fadeInUp 0.6s ease-out';
-                }
-            });
-        });
-        
-        preferencesSections.forEach(section => {
-            observer.observe(section);
-        });
-        
-        // Adicionar animação CSS
-        const style = document.createElement('style');
-        style.textContent = `
-            @keyframes fadeInUp {
-                from {
-                    opacity: 0;
-                    transform: translateY(30px);
-                }
-                to {
-                    opacity: 1;
-                    transform: translateY(0);
-                }
-            }
-            
-            .preference-item {
-                transform: scale(1);
-                transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-            }
-            
-            .preference-item:hover {
-                transform: scale(1.02);
-                box-shadow: 0 4px 20px rgba(40, 167, 69, 0.15);
-            }
-            
-            .preference-item.selected {
-                animation: pulse 0.6s ease-in-out;
-            }
-            
-            @keyframes pulse {
-                0% { transform: scale(1); }
-                50% { transform: scale(1.05); }
-                100% { transform: scale(1); }
-            }
-            
-            .settings-card {
-                animation: slideInLeft 0.5s ease-out;
-            }
-            
-            @keyframes slideInLeft {
-                from {
-                    opacity: 0;
-                    transform: translateX(-30px);
-                }
-                to {
-                    opacity: 1;
-                    transform: translateX(0);
-                }
-            }
-        `;
-        document.head.appendChild(style);
     </script>
 </body>
 </html>

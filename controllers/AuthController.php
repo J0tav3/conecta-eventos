@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// AUTH CONTROLLER - VERSÃO CORRIGIDA
+// AUTH CONTROLLER - VERSÃO COM FOTO DE PERFIL
 // Local: controllers/AuthController.php
 // ==========================================
 
@@ -11,11 +11,6 @@ class AuthController {
     private $debug = true;
     
     public function __construct() {
-        // NÃO iniciar sessão aqui - deixar para as páginas individuais
-        // if (session_status() == PHP_SESSION_NONE) {
-        //     session_start();
-        // }
-        
         try {
             $database = Database::getInstance();
             $this->conn = $database->getConnection();
@@ -40,7 +35,7 @@ class AuthController {
     }
     
     /**
-     * Processar login
+     * Processar login - ATUALIZADO COM FOTO DE PERFIL
      */
     public function login($data) {
         $email = trim($data['email'] ?? '');
@@ -65,9 +60,9 @@ class AuthController {
         }
         
         try {
-            // Buscar usuário no banco
+            // Buscar usuário no banco - INCLUINDO FOTO DE PERFIL
             $stmt = $this->conn->prepare("
-                SELECT id_usuario, nome, email, senha, tipo, ativo 
+                SELECT id_usuario, nome, email, senha, tipo, ativo, foto_perfil 
                 FROM usuarios 
                 WHERE email = ? AND ativo = 1
             ");
@@ -189,9 +184,9 @@ class AuthController {
             $senha_hash = password_hash($senha, PASSWORD_DEFAULT);
             $this->log("Hash da senha criado: " . substr($senha_hash, 0, 20) . "...");
             
-            // Inserir usuário
-            $sql = "INSERT INTO usuarios (nome, email, senha, tipo, telefone, cidade, estado, ativo, data_criacao) 
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW())";
+            // Inserir usuário - INCLUINDO CAMPOS PARA FOTO DE PERFIL
+            $sql = "INSERT INTO usuarios (nome, email, senha, tipo, telefone, cidade, estado, ativo, data_criacao, data_atualizacao) 
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 1, NOW(), NOW())";
             
             $stmt = $this->conn->prepare($sql);
             
@@ -232,7 +227,8 @@ class AuthController {
                         'nome' => $nome,
                         'email' => $email,
                         'tipo' => $tipo_usuario,
-                        'ativo' => 1
+                        'ativo' => 1,
+                        'foto_perfil' => null // Novo usuário sem foto
                     ];
                     
                     // Fazer login automático
@@ -322,7 +318,7 @@ class AuthController {
     }
     
     /**
-     * Criar sessão do usuário
+     * Criar sessão do usuário - ATUALIZADA COM FOTO DE PERFIL
      */
     private function createUserSession($user) {
         // Garantir que a sessão está iniciada
@@ -334,6 +330,7 @@ class AuthController {
         $_SESSION['user_name'] = $user['nome'];
         $_SESSION['user_email'] = $user['email'];
         $_SESSION['user_type'] = $user['tipo'];
+        $_SESSION['user_photo'] = $user['foto_perfil'] ?? null; // NOVO CAMPO
         $_SESSION['logged_in'] = true;
         $_SESSION['login_time'] = time();
         
@@ -400,7 +397,7 @@ class AuthController {
     }
     
     /**
-     * Obter dados do usuário logado
+     * Obter dados do usuário logado - ATUALIZADA COM FOTO DE PERFIL
      */
     public function getCurrentUser() {
         if (session_status() == PHP_SESSION_NONE) {
@@ -416,8 +413,55 @@ class AuthController {
             'name' => $_SESSION['user_name'],
             'email' => $_SESSION['user_email'],
             'type' => $_SESSION['user_type'],
+            'photo' => $_SESSION['user_photo'] ?? null, // NOVO CAMPO
             'login_time' => $_SESSION['login_time'] ?? null
         ];
+    }
+    
+    /**
+     * Obter URL da foto de perfil
+     */
+    public function getProfilePhotoUrl($userId = null) {
+        if (!$userId) {
+            $currentUser = $this->getCurrentUser();
+            if (!$currentUser || !$currentUser['photo']) {
+                return null;
+            }
+            $photoName = $currentUser['photo'];
+        } else {
+            // Buscar foto do usuário específico
+            try {
+                $stmt = $this->conn->prepare("SELECT foto_perfil FROM usuarios WHERE id_usuario = ?");
+                $stmt->execute([$userId]);
+                $result = $stmt->fetch();
+                $photoName = $result ? $result['foto_perfil'] : null;
+            } catch (Exception $e) {
+                return null;
+            }
+        }
+        
+        if (!$photoName) {
+            return null;
+        }
+        
+        $baseUrl = 'https://conecta-eventos-production.up.railway.app';
+        return $baseUrl . '/uploads/profiles/' . $photoName;
+    }
+    
+    /**
+     * Atualizar foto de perfil na sessão
+     */
+    public function updateSessionPhoto($photoName) {
+        if (session_status() == PHP_SESSION_NONE) {
+            session_start();
+        }
+        
+        if ($this->isLoggedIn()) {
+            $_SESSION['user_photo'] = $photoName;
+            return true;
+        }
+        
+        return false;
     }
     
     /**

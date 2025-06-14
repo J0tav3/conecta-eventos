@@ -1,168 +1,163 @@
 <?php
 // ==========================================
-// FUNÇÕES DE SESSÃO - VERSÃO CORRIGIDA
+// FUNÇÕES DE SESSÃO ATUALIZADAS COM FOTO
 // Local: includes/session.php
 // ==========================================
 
-// Iniciar sessão se não estiver iniciada
-if (session_status() == PHP_SESSION_NONE) {
-    session_start();
-}
-
-// Carregar configurações se ainda não foram carregadas
-if (!defined('SITE_URL')) {
-    require_once __DIR__ . '/../config/config.php';
-}
-
 /**
- * Verificar se usuário está logado
+ * Verificar se o usuário está logado
  */
 function isLoggedIn() {
     return isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;
 }
 
 /**
- * Verificar se é organizador
- */
-function isOrganizer() {
-    return isLoggedIn() && isset($_SESSION['user_type']) && $_SESSION['user_type'] === 'organizador';
-}
-
-/**
- * Verificar se é participante
- */
-function isParticipant() {
-    return isLoggedIn() && isset($_SESSION['user_type']) && $_SESSION['user_type'] === 'participante';
-}
-
-/**
- * Obter ID do usuário
+ * Obter ID do usuário logado
  */
 function getUserId() {
-    return isLoggedIn() ? ($_SESSION['user_id'] ?? null) : null;
+    return isLoggedIn() ? $_SESSION['user_id'] : null;
 }
 
 /**
- * Obter nome do usuário
+ * Obter nome do usuário logado
  */
 function getUserName() {
-    return isLoggedIn() ? ($_SESSION['user_name'] ?? 'Usuário') : null;
+    return isLoggedIn() ? $_SESSION['user_name'] : null;
 }
 
 /**
- * Obter email do usuário
+ * Obter email do usuário logado
  */
 function getUserEmail() {
-    return isLoggedIn() ? ($_SESSION['user_email'] ?? '') : null;
+    return isLoggedIn() ? $_SESSION['user_email'] : null;
 }
 
 /**
- * Obter tipo do usuário
+ * Obter tipo do usuário logado
  */
 function getUserType() {
-    return isLoggedIn() ? ($_SESSION['user_type'] ?? 'participante') : null;
+    return isLoggedIn() ? $_SESSION['user_type'] : null;
 }
 
 /**
- * Exigir login
+ * Obter foto de perfil do usuário logado
  */
-function requireLogin() {
-    if (!isLoggedIn()) {
-        header('Location: ' . SITE_URL . '/views/auth/login.php');
-        exit();
-    }
+function getUserPhoto() {
+    return isLoggedIn() ? ($_SESSION['user_photo'] ?? null) : null;
 }
 
 /**
- * Exigir que seja organizador
+ * Obter URL da foto de perfil do usuário logado
  */
-function requireOrganizer() {
-    requireLogin();
-    if (!isOrganizer()) {
-        header('Location: ' . SITE_URL . '/index.php');
-        exit();
-    }
-}
-
-/**
- * Exigir que seja participante
- */
-function requireParticipant() {
-    requireLogin();
-    if (!isParticipant()) {
-        header('Location: ' . SITE_URL . '/index.php');
-        exit();
-    }
-}
-
-/**
- * Definir mensagem flash
- */
-function setFlashMessage($message, $type = 'info') {
-    $_SESSION['flash_message'] = $message;
-    $_SESSION['flash_type'] = $type;
-}
-
-/**
- * Obter e limpar mensagem flash
- */
-function getFlashMessage() {
-    if (isset($_SESSION['flash_message'])) {
-        $message = [
-            'message' => $_SESSION['flash_message'],
-            'type' => $_SESSION['flash_type'] ?? 'info'
-        ];
-        unset($_SESSION['flash_message'], $_SESSION['flash_type']);
-        return $message;
-    }
-    return null;
-}
-
-/**
- * Mostrar mensagem flash (para usar em views)
- */
-function showFlashMessage() {
-    $flash = getFlashMessage();
-    if ($flash) {
-        $iconMap = [
-            'success' => 'check-circle',
-            'danger' => 'exclamation-triangle',
-            'warning' => 'exclamation-triangle',
-            'info' => 'info-circle'
-        ];
-        $icon = $iconMap[$flash['type']] ?? 'info-circle';
-        
-        echo '<div class="alert alert-' . htmlspecialchars($flash['type']) . ' alert-dismissible fade show" role="alert">';
-        echo '<i class="fas fa-' . $icon . ' me-2"></i>';
-        echo htmlspecialchars($flash['message']);
-        echo '<button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
-        echo '</div>';
-    }
-}
-
-/**
- * Criar sessão de usuário
- */
-function createUserSession($userData) {
-    $_SESSION['user_id'] = $userData['id_usuario'];
-    $_SESSION['user_name'] = $userData['nome'];
-    $_SESSION['user_email'] = $userData['email'];
-    $_SESSION['user_type'] = $userData['tipo'];
-    $_SESSION['logged_in'] = true;
-    $_SESSION['login_time'] = time();
+function getUserPhotoUrl() {
+    $photo = getUserPhoto();
+    if (!$photo) return null;
     
-    // Regenerar ID da sessão por segurança
-    session_regenerate_id(true);
+    $baseUrl = 'https://conecta-eventos-production.up.railway.app';
+    return $baseUrl . '/uploads/profiles/' . $photo;
+}
+
+/**
+ * Verificar se o usuário é organizador
+ */
+function isOrganizer() {
+    return isLoggedIn() && getUserType() === 'organizador';
+}
+
+/**
+ * Verificar se o usuário é participante
+ */
+function isParticipant() {
+    return isLoggedIn() && getUserType() === 'participante';
+}
+
+/**
+ * Obter avatar do usuário (foto ou inicial)
+ */
+function getUserAvatar($size = 40, $class = '') {
+    $photoUrl = getUserPhotoUrl();
+    $userName = getUserName() ?? 'U';
+    $initial = strtoupper(substr($userName, 0, 1));
+    
+    if ($photoUrl) {
+        return sprintf(
+            '<img src="%s" alt="Foto de %s" class="rounded-circle %s" style="width: %dpx; height: %dpx; object-fit: cover;">',
+            htmlspecialchars($photoUrl),
+            htmlspecialchars($userName),
+            htmlspecialchars($class),
+            $size,
+            $size
+        );
+    } else {
+        return sprintf(
+            '<div class="rounded-circle d-flex align-items-center justify-content-center %s" style="width: %dpx; height: %dpx; background: linear-gradient(135deg, #667eea, #764ba2); color: white; font-weight: bold; font-size: %dpx;">%s</div>',
+            htmlspecialchars($class),
+            $size,
+            $size,
+            max(12, $size / 3),
+            $initial
+        );
+    }
+}
+
+/**
+ * Atualizar foto na sessão
+ */
+function updateUserPhotoInSession($photoFileName) {
+    if (isLoggedIn()) {
+        $_SESSION['user_photo'] = $photoFileName;
+        return true;
+    }
+    return false;
+}
+
+/**
+ * Obter dados completos do usuário logado
+ */
+function getCurrentUserData() {
+    if (!isLoggedIn()) return null;
+    
+    return [
+        'id' => getUserId(),
+        'name' => getUserName(),
+        'email' => getUserEmail(),
+        'type' => getUserType(),
+        'photo' => getUserPhoto(),
+        'photo_url' => getUserPhotoUrl(),
+        'login_time' => $_SESSION['login_time'] ?? null
+    ];
+}
+
+/**
+ * Verificar se a sessão ainda é válida
+ */
+function validateSession() {
+    if (!isLoggedIn()) {
+        return false;
+    }
+    
+    // Verificar se a sessão não expirou (24 horas)
+    $maxLifetime = 24 * 60 * 60;
+    
+    if (isset($_SESSION['login_time']) && 
+        (time() - $_SESSION['login_time']) > $maxLifetime) {
+        
+        // Sessão expirada
+        destroySession();
+        return false;
+    }
+    
+    return true;
 }
 
 /**
  * Destruir sessão
  */
-function destroyUserSession() {
-    // Limpar variáveis de sessão
+function destroySession() {
+    // Destruir todas as variáveis de sessão
     $_SESSION = array();
     
-    // Deletar cookie de sessão se existir
+    // Se existe um cookie de sessão, deletá-lo
     if (ini_get("session.use_cookies")) {
         $params = session_get_cookie_params();
         setcookie(session_name(), '', time() - 42000,
@@ -171,49 +166,227 @@ function destroyUserSession() {
         );
     }
     
-    // Destruir sessão
+    // Destruir a sessão
     session_destroy();
 }
 
 /**
- * Gerar token CSRF (ÚNICA DECLARAÇÃO)
+ * Redirecionar se não estiver logado
  */
-if (!function_exists('generateCSRFToken')) {
-    function generateCSRFToken() {
-        if (!isset($_SESSION['csrf_token'])) {
-            $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-        }
-        return $_SESSION['csrf_token'];
+function requireLogin($redirectTo = '/views/auth/login.php') {
+    if (!isLoggedIn()) {
+        $currentUrl = $_SERVER['REQUEST_URI'] ?? '/';
+        $loginUrl = $redirectTo . '?redirect=' . urlencode($currentUrl);
+        header("Location: $loginUrl");
+        exit;
     }
 }
 
 /**
- * Verificar token CSRF (ÚNICA DECLARAÇÃO)
+ * Redirecionar se não for organizador
  */
-if (!function_exists('verifyCSRFToken')) {
-    function verifyCSRFToken($token) {
-        return isset($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $token);
+function requireOrganizer($redirectTo = '/views/dashboard/participant.php') {
+    requireLogin();
+    if (!isOrganizer()) {
+        header("Location: $redirectTo");
+        exit;
     }
 }
 
 /**
- * Limpar dados antigos da sessão
+ * Redirecionar se não for participante
  */
-function cleanupSession() {
-    // Verificar se a sessão expirou (24 horas)
-    $maxLifetime = 24 * 60 * 60;
+function requireParticipant($redirectTo = '/views/dashboard/organizer.php') {
+    requireLogin();
+    if (!isParticipant()) {
+        header("Location: $redirectTo");
+        exit;
+    }
+}
+
+/**
+ * Obter URL de redirecionamento baseada no tipo de usuário
+ */
+function getRedirectUrl($userType = null) {
+    $baseUrl = 'https://conecta-eventos-production.up.railway.app';
     
-    if (isset($_SESSION['login_time']) && 
-        (time() - $_SESSION['login_time']) > $maxLifetime) {
-        destroyUserSession();
-        return false;
+    if (!$userType) {
+        $userType = getUserType();
     }
+    
+    switch ($userType) {
+        case 'organizador':
+            return $baseUrl . '/views/dashboard/organizer.php';
+        case 'participante':
+            return $baseUrl . '/views/dashboard/participant.php';
+        default:
+            return $baseUrl . '/index.php';
+    }
+}
+
+/**
+ * Gerar token CSRF
+ */
+function generateCSRFToken() {
+    if (!isset($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+/**
+ * Verificar token CSRF
+ */
+function verifyCSRFToken($token) {
+    return isset($_SESSION['csrf_token']) && hash_equals($_SESSION['csrf_token'], $token);
+}
+
+/**
+ * Gerar campo hidden com token CSRF
+ */
+function csrfField() {
+    $token = generateCSRFToken();
+    return '<input type="hidden" name="csrf_token" value="' . htmlspecialchars($token) . '">';
+}
+
+/**
+ * Log de atividades do usuário
+ */
+function logUserActivity($action, $details = null) {
+    if (!isLoggedIn()) return false;
+    
+    $logEntry = [
+        'timestamp' => date('Y-m-d H:i:s'),
+        'user_id' => getUserId(),
+        'user_name' => getUserName(),
+        'action' => $action,
+        'details' => $details,
+        'ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown',
+        'user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? 'unknown'
+    ];
+    
+    // Log no arquivo de sistema
+    error_log("[USER_ACTIVITY] " . json_encode($logEntry));
     
     return true;
 }
 
-// Limpar sessão automaticamente se expirou
-if (isLoggedIn()) {
-    cleanupSession();
+/**
+ * Verificar se o usuário tem permissão para acessar um recurso
+ */
+function hasPermission($resource, $action = 'view') {
+    if (!isLoggedIn()) return false;
+    
+    $userType = getUserType();
+    
+    // Definir permissões básicas
+    $permissions = [
+        'organizador' => [
+            'events' => ['view', 'create', 'edit', 'delete'],
+            'participants' => ['view'],
+            'reports' => ['view'],
+            'settings' => ['view', 'edit']
+        ],
+        'participante' => [
+            'events' => ['view'],
+            'subscriptions' => ['view', 'create', 'delete'],
+            'favorites' => ['view', 'create', 'delete'],
+            'settings' => ['view', 'edit']
+        ]
+    ];
+    
+    return isset($permissions[$userType][$resource]) && 
+           in_array($action, $permissions[$userType][$resource]);
+}
+
+/**
+ * Sanitizar dados de entrada
+ */
+function sanitizeInput($data) {
+    if (is_array($data)) {
+        return array_map('sanitizeInput', $data);
+    }
+    
+    return htmlspecialchars(trim($data), ENT_QUOTES, 'UTF-8');
+}
+
+/**
+ * Validar email
+ */
+function isValidEmail($email) {
+    return filter_var($email, FILTER_VALIDATE_EMAIL) !== false;
+}
+
+/**
+ * Gerar senha segura
+ */
+function generateSecurePassword($length = 12) {
+    $chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*';
+    return substr(str_shuffle($chars), 0, $length);
+}
+
+/**
+ * Formatar data para exibição
+ */
+function formatDate($date, $format = 'd/m/Y') {
+    if (!$date) return '-';
+    return date($format, strtotime($date));
+}
+
+/**
+ * Formatar data e hora para exibição
+ */
+function formatDateTime($datetime, $format = 'd/m/Y H:i') {
+    if (!$datetime) return '-';
+    return date($format, strtotime($datetime));
+}
+
+/**
+ * Calcular tempo decorrido (tempo relativo)
+ */
+function timeAgo($datetime) {
+    if (!$datetime) return '-';
+    
+    $time = time() - strtotime($datetime);
+    
+    if ($time < 60) return 'agora mesmo';
+    if ($time < 3600) return floor($time / 60) . ' min atrás';
+    if ($time < 86400) return floor($time / 3600) . ' h atrás';
+    if ($time < 2592000) return floor($time / 86400) . ' dias atrás';
+    if ($time < 31536000) return floor($time / 2592000) . ' meses atrás';
+    return floor($time / 31536000) . ' anos atrás';
+}
+
+/**
+ * Truncar texto mantendo palavras completas
+ */
+function truncateText($text, $length = 100, $suffix = '...') {
+    if (strlen($text) <= $length) return $text;
+    
+    $truncated = substr($text, 0, $length);
+    $lastSpace = strrpos($truncated, ' ');
+    
+    if ($lastSpace !== false) {
+        $truncated = substr($truncated, 0, $lastSpace);
+    }
+    
+    return $truncated . $suffix;
+}
+
+/**
+ * Gerar slug amigável para URLs
+ */
+function generateSlug($text) {
+    $text = strtolower($text);
+    $text = preg_replace('/[àáâãäåąā]/u', 'a', $text);
+    $text = preg_replace('/[èéêëęē]/u', 'e', $text);
+    $text = preg_replace('/[ìíîïīįı]/u', 'i', $text);
+    $text = preg_replace('/[òóôõöøōő]/u', 'o', $text);
+    $text = preg_replace('/[ùúûüūůų]/u', 'u', $text);
+    $text = preg_replace('/[ñń]/u', 'n', $text);
+    $text = preg_replace('/[ç]/u', 'c', $text);
+    $text = preg_replace('/[^a-z0-9\s-]/', '', $text);
+    $text = preg_replace('/[\s-]+/', '-', $text);
+    return trim($text, '-');
 }
 ?>
