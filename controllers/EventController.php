@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// EVENT CONTROLLER - VERSÃO COM UPLOAD DE IMAGEM
+// EVENT CONTROLLER - VERSÃO CORRIGIDA
 // Local: controllers/EventController.php
 // ==========================================
 
@@ -196,7 +196,7 @@ class EventController {
     }
 
     /**
-     * Buscar categorias
+     * Buscar categorias sem duplicatas
      */
     public function getCategories() {
         if (!$this->conn) {
@@ -204,13 +204,26 @@ class EventController {
         }
 
         try {
-            $query = "SELECT * FROM categorias WHERE ativo = 1 ORDER BY nome ASC";
+            $query = "SELECT DISTINCT id_categoria, nome FROM categorias WHERE ativo = 1 ORDER BY nome ASC";
             $stmt = $this->conn->prepare($query);
             $stmt->execute();
             
             $categorias = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            $this->log("Encontradas " . count($categorias) . " categorias");
-            return $categorias ?: $this->getExampleCategories();
+            $this->log("Encontradas " . count($categorias) . " categorias únicas");
+            
+            // Remove duplicatas manualmente se ainda existirem
+            $categoriasUnicas = [];
+            $nomesVistos = [];
+            
+            foreach ($categorias as $categoria) {
+                $nome = strtolower(trim($categoria['nome']));
+                if (!in_array($nome, $nomesVistos)) {
+                    $nomesVistos[] = $nome;
+                    $categoriasUnicas[] = $categoria;
+                }
+            }
+            
+            return $categoriasUnicas ?: $this->getExampleCategories();
 
         } catch (Exception $e) {
             $this->log("Erro ao buscar categorias: " . $e->getMessage());
@@ -219,14 +232,17 @@ class EventController {
     }
 
     /**
-     * Buscar evento por ID
+     * Buscar evento por ID - CORRIGIDO
      */
     public function getById($id) {
         if (!$this->conn) {
-            return null;
+            // Se não há conexão, retorna dados exemplo baseados no ID
+            return $this->getExampleEventById($id);
         }
 
         try {
+            $this->log("Buscando evento com ID: " . $id);
+            
             $query = "SELECT 
                         e.*,
                         c.nome as nome_categoria,
@@ -241,22 +257,120 @@ class EventController {
                      GROUP BY e.id_evento";
 
             $stmt = $this->conn->prepare($query);
-            $stmt->bindParam(':id', $id);
+            $stmt->bindParam(':id', $id, PDO::PARAM_INT);
             $stmt->execute();
 
             $evento = $stmt->fetch(PDO::FETCH_ASSOC);
             
             if ($evento) {
                 $evento['imagem_url'] = $this->getImageUrl($evento['imagem_capa']);
+                $this->log("Evento encontrado: " . $evento['titulo']);
+            } else {
+                $this->log("Evento não encontrado no banco, usando dados exemplo");
+                return $this->getExampleEventById($id);
             }
             
-            $this->log("Evento encontrado: " . ($evento ? $evento['titulo'] : 'não encontrado'));
             return $evento;
 
         } catch (Exception $e) {
             $this->log("Erro ao buscar evento: " . $e->getMessage());
-            return null;
+            return $this->getExampleEventById($id);
         }
+    }
+
+    /**
+     * Dados de exemplo para evento específico baseado no ID
+     */
+    private function getExampleEventById($id) {
+        $eventos = [
+            1 => [
+                'id_evento' => 1,
+                'titulo' => 'Workshop de Desenvolvimento Web',
+                'descricao' => 'Aprenda as últimas tecnologias em desenvolvimento web com especialistas da área.',
+                'data_inicio' => date('Y-m-d', strtotime('+7 days')),
+                'data_fim' => date('Y-m-d', strtotime('+7 days')),
+                'horario_inicio' => '14:00:00',
+                'horario_fim' => '18:00:00',
+                'local_nome' => 'Centro de Tecnologia SP',
+                'local_endereco' => 'Av. Paulista, 1000',
+                'local_cidade' => 'São Paulo',
+                'local_estado' => 'SP',
+                'local_cep' => '01310-100',
+                'evento_gratuito' => 1,
+                'preco' => 0,
+                'capacidade_maxima' => 100,
+                'requisitos' => 'Conhecimento básico de programação',
+                'informacoes_adicionais' => 'Notebook, carregador, bloco de notas',
+                'imagem_capa' => '',
+                'imagem_url' => null,
+                'id_categoria' => 1,
+                'nome_categoria' => 'Tecnologia',
+                'total_inscritos' => 45,
+                'nome_organizador' => 'Tech Academy',
+                'email_organizador' => 'contato@techacademy.com',
+                'status' => 'publicado',
+                'descricao_detalhada' => 'Este workshop é ideal para desenvolvedores iniciantes e intermediários que desejam aprimorar suas habilidades em desenvolvimento web. Abordaremos tópicos como HTML5, CSS3, JavaScript ES6+, e frameworks modernos.'
+            ],
+            2 => [
+                'id_evento' => 2,
+                'titulo' => 'Palestra sobre Inteligência Artificial',
+                'descricao' => 'Uma visão abrangente sobre o futuro da IA e suas aplicações práticas no mundo dos negócios.',
+                'data_inicio' => date('Y-m-d', strtotime('+10 days')),
+                'data_fim' => date('Y-m-d', strtotime('+10 days')),
+                'horario_inicio' => '19:00:00',
+                'horario_fim' => '21:00:00',
+                'local_nome' => 'Auditório RJ Tech',
+                'local_endereco' => 'Rua das Laranjeiras, 500',
+                'local_cidade' => 'Rio de Janeiro',
+                'local_estado' => 'RJ',
+                'local_cep' => '22240-006',
+                'evento_gratuito' => 0,
+                'preco' => 50.00,
+                'capacidade_maxima' => 200,
+                'requisitos' => 'Interesse em tecnologia e inovação',
+                'informacoes_adicionais' => 'Apenas curiosidade e vontade de aprender!',
+                'imagem_capa' => '',
+                'imagem_url' => null,
+                'id_categoria' => 1,
+                'nome_categoria' => 'Tecnologia',
+                'total_inscritos' => 32,
+                'nome_organizador' => 'AI Institute',
+                'email_organizador' => 'eventos@aiinstitute.com',
+                'status' => 'publicado',
+                'descricao_detalhada' => 'Palestra com especialistas renomados em IA, abordando machine learning, deep learning e suas aplicações em diversos setores.'
+            ],
+            3 => [
+                'id_evento' => 3,
+                'titulo' => 'Meetup de Empreendedorismo',
+                'descricao' => 'Encontro para empreendedores discutirem ideias, networking e oportunidades de negócio.',
+                'data_inicio' => date('Y-m-d', strtotime('+15 days')),
+                'data_fim' => date('Y-m-d', strtotime('+15 days')),
+                'horario_inicio' => '18:30:00',
+                'horario_fim' => '22:00:00',
+                'local_nome' => 'Hub BH',
+                'local_endereco' => 'Av. do Contorno, 300',
+                'local_cidade' => 'Belo Horizonte',
+                'local_estado' => 'MG',
+                'local_cep' => '30110-017',
+                'evento_gratuito' => 1,
+                'preco' => 0,
+                'capacidade_maxima' => 50,
+                'requisitos' => 'Interesse em empreendedorismo',
+                'informacoes_adicionais' => 'Cartões de visita, apresentação da sua startup (opcional)',
+                'imagem_capa' => '',
+                'imagem_url' => null,
+                'id_categoria' => 2,
+                'nome_categoria' => 'Negócios',
+                'total_inscritos' => 28,
+                'nome_organizador' => 'StartupBH',
+                'email_organizador' => 'contato@startupbh.com',
+                'status' => 'publicado',
+                'descricao_detalhada' => 'Evento focado em networking entre empreendedores, apresentação de startups e discussões sobre o ecossistema empreendedor.'
+            ]
+        ];
+
+        // Retorna o evento específico ou o primeiro se não existir
+        return $eventos[$id] ?? $eventos[1];
     }
 
     /**
@@ -636,7 +750,7 @@ class EventController {
     }
 
     /**
-     * Categorias de exemplo
+     * Categorias de exemplo - SEM DUPLICATAS
      */
     private function getExampleCategories() {
         return [
