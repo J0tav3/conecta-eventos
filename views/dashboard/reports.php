@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// RELATÓRIOS DO ORGANIZADOR - VERSÃO CORRIGIDA
+// RELATÓRIOS DO ORGANIZADOR - COM DEBUG DA API
 // Local: views/dashboard/reports.php
 // ==========================================
 
@@ -24,14 +24,23 @@ $userId = $_SESSION['user_id'] ?? 0;
 // URLs
 $dashboardUrl = 'organizer.php';
 $homeUrl = '../../index.php';
-$apiUrl = 'https://conecta-eventos-production.up.railway.app/api/analytics.php';
+$baseUrl = 'https://conecta-eventos-production.up.railway.app';
 
 // Período selecionado
-$periodo = $_GET['periodo'] ?? 'month'; // month, quarter, year
+$periodo = $_GET['periodo'] ?? 'month';
 
-// Função para fazer requisições à API
+// Debug - mostrar informações da sessão
+$debugInfo = [
+    'user_id' => $userId,
+    'user_name' => $userName,
+    'user_type' => $_SESSION['user_type'] ?? 'não definido',
+    'session_id' => session_id(),
+    'cookies' => $_COOKIE
+];
+
+// Função melhorada para fazer requisições à API
 function fetchAnalyticsData($action, $period = 'month', $limit = null) {
-    global $apiUrl;
+    global $baseUrl, $debugInfo;
     
     $params = [
         'action' => $action,
@@ -42,27 +51,49 @@ function fetchAnalyticsData($action, $period = 'month', $limit = null) {
         $params['limit'] = $limit;
     }
     
-    $url = $apiUrl . '?' . http_build_query($params);
+    $url = $baseUrl . '/api/analytics.php?' . http_build_query($params);
+    
+    // Preparar cookies para enviar
+    $cookieHeader = '';
+    if (isset($_COOKIE)) {
+        $cookiePairs = [];
+        foreach ($_COOKIE as $name => $value) {
+            $cookiePairs[] = $name . '=' . $value;
+        }
+        $cookieHeader = implode('; ', $cookiePairs);
+    }
     
     $options = [
         'http' => [
             'method' => 'GET',
             'header' => [
                 'Content-Type: application/json',
-                'Cookie: ' . $_SERVER['HTTP_COOKIE'] ?? ''
-            ]
+                'Cookie: ' . $cookieHeader,
+                'User-Agent: Mozilla/5.0 (compatible; Conecta-Eventos/1.0)'
+            ],
+            'timeout' => 30
         ]
     ];
     
     $context = stream_context_create($options);
     $response = @file_get_contents($url, false, $context);
     
+    // Debug da requisição
+    $debugInfo['api_calls'][] = [
+        'action' => $action,
+        'url' => $url,
+        'cookies_sent' => $cookieHeader,
+        'response_received' => $response !== false,
+        'response_length' => $response ? strlen($response) : 0,
+        'response_preview' => $response ? substr($response, 0, 200) : 'ERRO'
+    ];
+    
     if ($response === false) {
         return null;
     }
     
     $data = json_decode($response, true);
-    return $data['success'] ? $data['data'] : null;
+    return ($data && isset($data['success']) && $data['success']) ? $data['data'] : null;
 }
 
 // Buscar dados da API
@@ -73,7 +104,9 @@ $eventsByCategory = fetchAnalyticsData('events_by_category', $periodo);
 $eventsByStatus = fetchAnalyticsData('events_by_status', $periodo);
 $topEvents = fetchAnalyticsData('top_events', $periodo, 5);
 $revenueStats = fetchAnalyticsData('revenue_stats', $periodo);
-$participantStats = fetchAnalyticsData('participant_stats', $periodo);
+
+// Verificar se conseguiu dados reais
+$hasRealData = ($overview !== null);
 
 // Dados padrão caso a API não responda
 if (!$overview) {
@@ -96,7 +129,7 @@ if (!$subscriptionsByMonth) {
 }
 
 if (!$eventsByCategory) {
-    $eventsByCategory = ['labels' => ['Nenhuma categoria'], 'data' => [0]];
+    $eventsByCategory = ['labels' => ['Nenhum dado'], 'data' => [0]];
 }
 
 if (!$eventsByStatus) {
@@ -116,29 +149,15 @@ if (!$revenueStats) {
     ];
 }
 
-// Calcular crescimento dos participantes (simulado se não houver dados suficientes)
-$participantGrowth = 0;
-if ($participantStats && isset($participantStats['new_participants']['data'])) {
-    $data = $participantStats['new_participants']['data'];
-    if (count($data) >= 2) {
-        $current = array_slice($data, -3); // Últimos 3 meses
-        $previous = array_slice($data, -6, 3); // 3 meses anteriores
-        
-        $currentSum = array_sum($current);
-        $previousSum = array_sum($previous);
-        
-        if ($previousSum > 0) {
-            $participantGrowth = round((($currentSum - $previousSum) / $previousSum) * 100, 1);
-        }
-    }
-}
-
 // Mapear períodos para labels
 $periodLabels = [
     'month' => 'Últimos 6 meses',
     'quarter' => 'Último trimestre',
     'year' => 'Último ano'
 ];
+
+// Mostrar debug se estiver em modo de desenvolvimento
+$showDebug = isset($_GET['debug']) && $_GET['debug'] == '1';
 ?>
 
 <!DOCTYPE html>
@@ -218,10 +237,6 @@ $periodLabels = [
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
         }
         
-        .table-card .table {
-            margin-bottom: 0;
-        }
-        
         .period-selector {
             background: white;
             border-radius: 1rem;
@@ -242,10 +257,22 @@ $periodLabels = [
             border: none;
         }
 
-        .loading-spinner {
-            display: none;
-            text-align: center;
-            padding: 2rem;
+        .api-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1050;
+            min-width: 300px;
+        }
+
+        .debug-panel {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin-bottom: 1rem;
+            font-family: monospace;
+            font-size: 0.85rem;
         }
 
         .no-data {
@@ -256,6 +283,31 @@ $periodLabels = [
     </style>
 </head>
 <body>
+    <!-- Status da API -->
+    <div class="api-status">
+        <?php if (!$hasRealData): ?>
+            <div class="alert alert-warning alert-dismissible">
+                <i class="fas fa-exclamation-triangle me-2"></i>
+                <strong>Dados Simulados</strong><br>
+                Não foi possível conectar com a API.
+                <br>
+                <small>
+                    <a href="?<?php echo http_build_query(array_merge($_GET, ['debug' => '1'])); ?>" class="text-decoration-none">
+                        Ver detalhes do debug
+                    </a>
+                </small>
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        <?php else: ?>
+            <div class="alert alert-success alert-dismissible">
+                <i class="fas fa-check-circle me-2"></i>
+                <strong>Dados Reais</strong><br>
+                Conectado com a API com sucesso!
+                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+            </div>
+        <?php endif; ?>
+    </div>
+
     <!-- Header -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
@@ -295,15 +347,20 @@ $periodLabels = [
                 <div class="col-md-8">
                     <h1><i class="fas fa-chart-bar me-2"></i>Relatórios</h1>
                     <p class="mb-0 fs-5">Acompanhe o desempenho dos seus eventos</p>
-                    <small class="opacity-75">Período: <?php echo $periodLabels[$periodo] ?? 'Personalizado'; ?></small>
+                    <small class="opacity-75">
+                        Período: <?php echo $periodLabels[$periodo] ?? 'Personalizado'; ?>
+                        <?php if (!$hasRealData): ?>
+                            | <span class="text-warning">⚠️ Dados simulados</span>
+                        <?php endif; ?>
+                    </small>
                 </div>
                 <div class="col-md-4 text-md-end">
                     <div class="btn-group">
                         <button class="btn btn-light" onclick="window.print()">
                             <i class="fas fa-print me-2"></i>Imprimir
                         </button>
-                        <button class="btn btn-outline-light" onclick="exportData()">
-                            <i class="fas fa-download me-2"></i>Exportar
+                        <button class="btn btn-outline-light" onclick="testApiConnection()">
+                            <i class="fas fa-plug me-2"></i>Testar API
                         </button>
                     </div>
                 </div>
@@ -312,6 +369,24 @@ $periodLabels = [
     </section>
 
     <div class="container pb-5">
+        <!-- Debug Panel (apenas se solicitado) -->
+        <?php if ($showDebug): ?>
+            <div class="debug-panel">
+                <h6><i class="fas fa-bug me-2"></i>Informações de Debug</h6>
+                <strong>Sessão:</strong><br>
+                <?php echo htmlspecialchars(print_r($debugInfo, true)); ?>
+                
+                <hr>
+                
+                <strong>Testes de API:</strong><br>
+                <button class="btn btn-sm btn-primary me-2" onclick="testSpecificEndpoint('overview')">Testar Overview</button>
+                <button class="btn btn-sm btn-primary me-2" onclick="testSpecificEndpoint('events_by_month')">Testar Eventos</button>
+                <button class="btn btn-sm btn-primary" onclick="testAllEndpoints()">Testar Todos</button>
+                
+                <div id="apiTestResults" class="mt-3"></div>
+            </div>
+        <?php endif; ?>
+
         <!-- Seletor de Período -->
         <div class="period-selector">
             <div class="d-flex justify-content-between align-items-center">
@@ -328,14 +403,6 @@ $periodLabels = [
                     </a>
                 </div>
             </div>
-        </div>
-
-        <!-- Loading Spinner -->
-        <div class="loading-spinner" id="loadingSpinner">
-            <div class="spinner-border text-primary" role="status">
-                <span class="visually-hidden">Carregando...</span>
-            </div>
-            <p class="mt-2">Carregando dados...</p>
         </div>
 
         <!-- Métricas Principais -->
@@ -384,7 +451,26 @@ $periodLabels = [
             </div>
         </div>
 
-        <!-- Gráficos -->
+        <!-- Primeira Experiência para Usuários sem Dados -->
+        <?php if ($overview['total_events'] == 0): ?>
+            <div class="row">
+                <div class="col-12">
+                    <div class="report-card text-center">
+                        <i class="fas fa-rocket fa-4x text-primary mb-4"></i>
+                        <h3>Bem-vindo aos Relatórios!</h3>
+                        <p class="mb-4">Você ainda não criou nenhum evento. Que tal começar criando seu primeiro evento para ver relatórios incríveis aqui?</p>
+                        <a href="../events/create.php" class="btn btn-primary btn-lg me-3">
+                            <i class="fas fa-plus me-2"></i>Criar Primeiro Evento
+                        </a>
+                        <a href="<?php echo $dashboardUrl; ?>" class="btn btn-outline-primary btn-lg">
+                            <i class="fas fa-arrow-left me-2"></i>Voltar ao Dashboard
+                        </a>
+                    </div>
+                </div>
+            </div>
+        <?php else: ?>
+
+        <!-- Gráficos (apenas se houver dados) -->
         <div class="row">
             <div class="col-lg-8">
                 <div class="chart-container">
@@ -419,34 +505,19 @@ $periodLabels = [
             </div>
         </div>
 
-        <!-- Receita por Período -->
-        <?php if (!empty($revenueStats['data']) && array_sum($revenueStats['data']) > 0): ?>
+        <!-- Top Eventos -->
         <div class="row">
             <div class="col-12">
-                <div class="chart-container">
-                    <h5 class="mb-4">
-                        <i class="fas fa-dollar-sign me-2"></i>Receita por Período
-                    </h5>
-                    <canvas id="revenueChart" width="400" height="200"></canvas>
-                </div>
-            </div>
-        </div>
-        <?php endif; ?>
-
-        <!-- Tabelas de Dados -->
-        <div class="row">
-            <!-- Top Eventos -->
-            <div class="col-lg-8">
                 <div class="report-card">
                     <h5 class="mb-4">
-                        <i class="fas fa-trophy me-2"></i>Top 5 Eventos Mais Populares
+                        <i class="fas fa-trophy me-2"></i>Seus Eventos Mais Populares
                     </h5>
                     <?php if (empty($topEvents)): ?>
                         <div class="no-data">
                             <i class="fas fa-trophy fa-3x mb-3"></i>
                             <p>Nenhum evento com inscrições ainda</p>
                             <a href="../events/create.php" class="btn btn-primary">
-                                <i class="fas fa-plus me-2"></i>Criar Primeiro Evento
+                                <i class="fas fa-plus me-2"></i>Criar Evento
                             </a>
                         </div>
                     <?php else: ?>
@@ -500,203 +571,82 @@ $periodLabels = [
                     <?php endif; ?>
                 </div>
             </div>
-            
-            <!-- Categorias -->
-            <div class="col-lg-4">
-                <div class="report-card">
-                    <h5 class="mb-4">
-                        <i class="fas fa-tags me-2"></i>Eventos por Categoria
-                    </h5>
-                    <?php if (empty($eventsByCategory['data']) || array_sum($eventsByCategory['data']) == 0): ?>
-                        <div class="no-data">
-                            <i class="fas fa-tags fa-2x mb-2"></i>
-                            <p class="small">Nenhuma categoria definida</p>
-                        </div>
-                    <?php else: ?>
-                        <div class="table-card">
-                            <table class="table table-sm">
-                                <tbody>
-                                    <?php for ($i = 0; $i < count($eventsByCategory['labels']); $i++): ?>
-                                        <tr>
-                                            <td><?php echo htmlspecialchars($eventsByCategory['labels'][$i]); ?></td>
-                                            <td class="text-end">
-                                                <span class="badge bg-primary"><?php echo $eventsByCategory['data'][$i]; ?></span>
-                                            </td>
-                                        </tr>
-                                    <?php endfor; ?>
-                                </tbody>
-                            </table>
-                        </div>
-                    <?php endif; ?>
-                </div>
-            </div>
         </div>
 
-        <!-- Insights e Recomendações -->
-        <div class="row">
-            <div class="col-lg-8">
-                <div class="report-card info">
-                    <h5 class="mb-4">
-                        <i class="fas fa-lightbulb me-2"></i>Insights e Recomendações
-                    </h5>
-                    <div class="row">
-                        <?php if ($overview['total_events'] > 0): ?>
-                            <div class="col-md-6 mb-3">
-                                <div class="d-flex align-items-start">
-                                    <i class="fas fa-chart-line fa-lg text-success me-3 mt-1"></i>
-                                    <div>
-                                        <h6>Performance Geral</h6>
-                                        <p class="mb-0 small text-muted">
-                                            Você tem <?php echo $overview['total_events']; ?> eventos com 
-                                            <?php echo $overview['total_subscriptions']; ?> inscrições totais.
-                                            <?php if ($overview['avg_rating'] >= 4): ?>
-                                                Excelente avaliação média!
-                                            <?php endif; ?>
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-                        
-                        <?php if ($overview['growth_rate'] > 0): ?>
-                            <div class="col-md-6 mb-3">
-                                <div class="d-flex align-items-start">
-                                    <i class="fas fa-trending-up fa-lg text-success me-3 mt-1"></i>
-                                    <div>
-                                        <h6>Crescimento Positivo</h6>
-                                        <p class="mb-0 small text-muted">
-                                            Seus eventos cresceram <?php echo $overview['growth_rate']; ?>% 
-                                            comparado ao período anterior. Continue assim!
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-                        
-                        <?php if ($overview['total_revenue'] > 0): ?>
-                            <div class="col-md-6 mb-3">
-                                <div class="d-flex align-items-start">
-                                    <i class="fas fa-dollar-sign fa-lg text-warning me-3 mt-1"></i>
-                                    <div>
-                                        <h6>Receita Gerada</h6>
-                                        <p class="mb-0 small text-muted">
-                                            Total de R$ <?php echo number_format($overview['total_revenue'], 2, ',', '.'); ?> 
-                                            em eventos pagos. Média de R$ <?php echo number_format($revenueStats['average'], 2, ',', '.'); ?>/mês.
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-                        
-                        <?php if ($overview['total_events'] == 0): ?>
-                            <div class="col-12">
-                                <div class="d-flex align-items-start">
-                                    <i class="fas fa-rocket fa-lg text-primary me-3 mt-1"></i>
-                                    <div>
-                                        <h6>Comece Agora!</h6>
-                                        <p class="mb-3 small text-muted">
-                                            Você ainda não criou nenhum evento. Que tal começar criando seu primeiro evento?
-                                        </p>
-                                        <a href="../events/create.php" class="btn btn-primary btn-sm">
-                                            <i class="fas fa-plus me-2"></i>Criar Primeiro Evento
-                                        </a>
-                                    </div>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="col-lg-4">
-                <div class="report-card success">
-                    <h5 class="mb-4">
-                        <i class="fas fa-info-circle me-2"></i>Informações
-                    </h5>
-                    <div class="mb-3">
-                        <small class="text-muted d-block">Último período analisado:</small>
-                        <strong><?php echo $periodLabels[$periodo] ?? 'Personalizado'; ?></strong>
-                    </div>
-                    
-                    <div class="mb-3">
-                        <small class="text-muted d-block">Participantes únicos:</small>
-                        <strong><?php echo number_format($overview['unique_participants']); ?></strong>
-                    </div>
-                    
-                    <?php if ($overview['total_revenue'] > 0): ?>
-                        <div class="mb-3">
-                            <small class="text-muted d-block">Ticket médio:</small>
-                            <strong>R$ <?php echo number_format($overview['total_revenue'] / max($overview['total_subscriptions'], 1), 2, ',', '.'); ?></strong>
-                        </div>
-                    <?php endif; ?>
-                    
-                    <div class="mb-3">
-                        <small class="text-muted d-block">Relatório gerado em:</small>
-                        <strong><?php echo date('d/m/Y H:i'); ?></strong>
-                    </div>
-                </div>
-            </div>
-        </div>
+        <?php endif; // fim do else para usuários com dados ?>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
-        document.addEventListener('DOMContentLoaded', function() {
-            // Dados para os gráficos vindos do PHP
-            const eventsByMonth = <?php echo json_encode($eventsByMonth); ?>;
-            const subscriptionsByMonth = <?php echo json_encode($subscriptionsByMonth); ?>;
-            const eventsByStatus = <?php echo json_encode($eventsByStatus); ?>;
-            const revenueStats = <?php echo json_encode($revenueStats); ?>;
+        // Função para testar conexão com API
+        async function testApiConnection() {
+            const btn = event.target;
+            const originalText = btn.innerHTML;
+            btn.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Testando...';
+            btn.disabled = true;
+            
+            try {
+                const response = await fetch('<?php echo $baseUrl; ?>/api/analytics.php?action=overview&period=month');
+                const data = await response.json();
+                
+                if (data.success) {
+                    alert('✅ API funcionando! Dados encontrados para o usuário logado.');
+                    location.reload();
+                } else {
+                    alert('❌ API respondeu mas retornou erro: ' + (data.message || 'Erro desconhecido'));
+                }
+            } catch (error) {
+                alert('❌ Erro ao conectar com a API: ' + error.message);
+            } finally {
+                btn.innerHTML = originalText;
+                btn.disabled = false;
+            }
+        }
 
-            // Gráfico de Eventos e Inscrições se houver dados
-            const eventsChartElement = document.getElementById('eventosChart');
-            if (eventsChartElement && (eventsByMonth.data.length > 0 || subscriptionsByMonth.data.length > 0)) {
-                const ctx1 = eventsChartElement.getContext('2d');
-                new Chart(ctx1, {
-                    type: 'line',
-                    data: {
-                        labels: eventsByMonth.labels || subscriptionsByMonth.labels,
-                        datasets: [{
-                            label: 'Eventos Criados',
-                            data: eventsByMonth.data,
-                            borderColor: '#667eea',
-                            backgroundColor: 'rgba(102, 126, 234, 0.1)',
-                            tension: 0.4,
-                            yAxisID: 'y'
-                        }, {
-                            label: 'Inscrições',
-                            data: subscriptionsByMonth.data,
-                            borderColor: '#28a745',
-                            backgroundColor: 'rgba(40, 167, 69, 0.1)',
-                            tension: 0.4,
-                            yAxisID: 'y1'
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                position: 'top',
-                            }
-                        },
-                        scales: {
-                            y: {
-                                type: 'linear',
-                                display: true,
-                                position: 'left',
-                                title: {
-                                    display: true,
-                                    text: 'Eventos'
-                                },
-                                beginAtZero: true
-                            },
-                            y1: {
-                                type: 'linear',
-                                display: true,
-                                position: 'right',
-                                title: {
-                                    display: true,
-                                    text: 'Inscrições'
-                                },
+        // Função para testar endpoint específico
+        async function testSpecificEndpoint(action) {
+            const results = document.getElementById('apiTestResults');
+            results.innerHTML += `<p>Testando ${action}...</p>`;
+            
+            try {
+                const response = await fetch(`<?php echo $baseUrl; ?>/api/analytics.php?action=${action}&period=month`);
+                const text = await response.text();
+                
+                results.innerHTML += `<div class="alert alert-info">
+                    <strong>${action}:</strong><br>
+                    Status: ${response.status}<br>
+                    Response: <pre>${text.substring(0, 500)}${text.length > 500 ? '...' : ''}</pre>
+                </div>`;
+            } catch (error) {
+                results.innerHTML += `<div class="alert alert-danger">
+                    <strong>${action}:</strong> Erro - ${error.message}
+                </div>`;
+            }
+        }
+
+        // Função para testar todos os endpoints
+        async function testAllEndpoints() {
+            const endpoints = ['overview', 'events_by_month', 'subscriptions_by_month', 'events_by_category', 'events_by_status', 'top_events'];
+            document.getElementById('apiTestResults').innerHTML = '<h6>Testando todos os endpoints...</h6>';
+            
+            for (const endpoint of endpoints) {
+                await testSpecificEndpoint(endpoint);
+            }
+        }
+
+        // Auto-hide alerts
+        document.addEventListener('DOMContentLoaded', function() {
+            setTimeout(() => {
+                const alerts = document.querySelectorAll('.alert-dismissible');
+                alerts.forEach(alert => {
+                    const bsAlert = bootstrap.Alert.getOrCreateInstance(alert);
+                    if (bsAlert) {
+                        bsAlert.close();
+                    }
+                });
+            }, 5000);
+        });
+    </script>
+</body>
+</html>
