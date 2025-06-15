@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// RELATÓRIOS DO ORGANIZADOR - CONSULTA DIRETA
+// RELATÓRIOS DO ORGANIZADOR - VERSÃO CORRIGIDA
 // Local: views/dashboard/reports.php
 // ==========================================
 
@@ -17,26 +17,6 @@ if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'organizador') 
     exit;
 }
 
-// Incluir configurações e dependências
-require_once '../../config/config.php';
-require_once '../../includes/session.php';
-
-// Verificar se as funções de sessão estão disponíveis
-if (!function_exists('isLoggedIn') || !function_exists('isOrganizer')) {
-    // Implementar verificações básicas se as funções não existirem
-    function isLoggedIn() {
-        return isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;
-    }
-    
-    function isOrganizer() {
-        return isset($_SESSION['user_type']) && $_SESSION['user_type'] === 'organizador';
-    }
-    
-    function getUserId() {
-        return $_SESSION['user_id'] ?? 0;
-    }
-}
-
 $title = "Relatórios - Conecta Eventos";
 $userName = $_SESSION['user_name'] ?? 'Organizador';
 $userId = $_SESSION['user_id'] ?? 0;
@@ -44,281 +24,114 @@ $userId = $_SESSION['user_id'] ?? 0;
 // URLs
 $dashboardUrl = 'organizer.php';
 $homeUrl = '../../index.php';
+$apiUrl = 'https://conecta-eventos-production.up.railway.app/api/analytics.php';
 
 // Período selecionado
-$periodo = $_GET['periodo'] ?? 'month';
+$periodo = $_GET['periodo'] ?? 'month'; // month, quarter, year
 
-// Conectar ao banco
-try {
-    $database = new Database();
-    $conn = $database->getConnection();
-} catch (Exception $e) {
-    die("Erro ao conectar com o banco: " . $e->getMessage());
-}
-
-// Função para obter número de meses baseado no período
-function getPeriodMonths($period) {
-    switch ($period) {
-        case 'quarter':
-            return 3;
-        case 'year':
-            return 12;
-        case 'month':
-        default:
-            return 6;
+// Função para fazer requisições à API
+function fetchAnalyticsData($action, $period = 'month', $limit = null) {
+    global $apiUrl;
+    
+    $params = [
+        'action' => $action,
+        'period' => $period
+    ];
+    
+    if ($limit) {
+        $params['limit'] = $limit;
     }
+    
+    $url = $apiUrl . '?' . http_build_query($params);
+    
+    $options = [
+        'http' => [
+            'method' => 'GET',
+            'header' => [
+                'Content-Type: application/json',
+                'Cookie: ' . $_SERVER['HTTP_COOKIE'] ?? ''
+            ]
+        ]
+    ];
+    
+    $context = stream_context_create($options);
+    $response = @file_get_contents($url, false, $context);
+    
+    if ($response === false) {
+        return null;
+    }
+    
+    $data = json_decode($response, true);
+    return $data['success'] ? $data['data'] : null;
 }
 
-// Buscar dados diretamente do banco
-$months = getPeriodMonths($periodo);
+// Buscar dados da API
+$overview = fetchAnalyticsData('overview', $periodo);
+$eventsByMonth = fetchAnalyticsData('events_by_month', $periodo);
+$subscriptionsByMonth = fetchAnalyticsData('subscriptions_by_month', $periodo);
+$eventsByCategory = fetchAnalyticsData('events_by_category', $periodo);
+$eventsByStatus = fetchAnalyticsData('events_by_status', $periodo);
+$topEvents = fetchAnalyticsData('top_events', $periodo, 5);
+$revenueStats = fetchAnalyticsData('revenue_stats', $periodo);
+$participantStats = fetchAnalyticsData('participant_stats', $periodo);
 
-// 1. Estatísticas gerais (overview)
-$overview = [];
-
-// Total de eventos
-$stmt = $conn->prepare("SELECT COUNT(*) as total FROM eventos WHERE id_organizador = ?");
-$stmt->execute([$userId]);
-$overview['total_events'] = (int) $stmt->fetch()['total'];
-
-// Total de inscrições confirmadas
-$stmt = $conn->prepare("
-    SELECT COUNT(*) as total 
-    FROM inscricoes i 
-    INNER JOIN eventos e ON i.id_evento = e.id_evento 
-    WHERE e.id_organizador = ? AND i.status = 'confirmada'
-");
-$stmt->execute([$userId]);
-$overview['total_subscriptions'] = (int) $stmt->fetch()['total'];
-
-// Participantes únicos
-$stmt = $conn->prepare("
-    SELECT COUNT(DISTINCT i.id_participante) as total 
-    FROM inscricoes i 
-    INNER JOIN eventos e ON i.id_evento = e.id_evento 
-    WHERE e.id_organizador = ? AND i.status = 'confirmada'
-");
-$stmt->execute([$userId]);
-$overview['unique_participants'] = (int) $stmt->fetch()['total'];
-
-// Avaliação média
-$stmt = $conn->prepare("
-    SELECT AVG(i.avaliacao_evento) as avg_rating 
-    FROM inscricoes i 
-    INNER JOIN eventos e ON i.id_evento = e.id_evento 
-    WHERE e.id_organizador = ? AND i.avaliacao_evento IS NOT NULL
-");
-$stmt->execute([$userId]);
-$result = $stmt->fetch();
-$overview['avg_rating'] = $result['avg_rating'] ? round($result['avg_rating'], 1) : 0;
-
-// Receita total (apenas eventos pagos)
-$stmt = $conn->prepare("
-    SELECT SUM(e.preco) as total_revenue 
-    FROM inscricoes i 
-    INNER JOIN eventos e ON i.id_evento = e.id_evento 
-    WHERE e.id_organizador = ? AND i.status = 'confirmada' AND e.evento_gratuito = 0
-");
-$stmt->execute([$userId]);
-$result = $stmt->fetch();
-$overview['total_revenue'] = (float) ($result['total_revenue'] ?? 0);
-
-// Taxa de crescimento (últimos vs anteriores)
-$stmt = $conn->prepare("
-    SELECT 
-        COUNT(CASE WHEN e.data_criacao >= DATE_SUB(NOW(), INTERVAL ? DAY) THEN 1 END) as recent,
-        COUNT(CASE WHEN e.data_criacao >= DATE_SUB(NOW(), INTERVAL ? DAY) 
-                   AND e.data_criacao < DATE_SUB(NOW(), INTERVAL ? DAY) THEN 1 END) as previous
-    FROM eventos e 
-    WHERE e.id_organizador = ?
-");
-$periodDays = $months * 30;
-$stmt->execute([$periodDays, $periodDays * 2, $periodDays, $userId]);
-$growth = $stmt->fetch();
-
-$overview['growth_rate'] = 0;
-if ($growth['previous'] > 0) {
-    $overview['growth_rate'] = round((($growth['recent'] - $growth['previous']) / $growth['previous']) * 100, 1);
+// Dados padrão caso a API não responda
+if (!$overview) {
+    $overview = [
+        'total_events' => 0,
+        'total_subscriptions' => 0,
+        'unique_participants' => 0,
+        'avg_rating' => 0,
+        'total_revenue' => 0,
+        'growth_rate' => 0
+    ];
 }
 
-// 2. Eventos por mês
-$stmt = $conn->prepare("
-    SELECT 
-        DATE_FORMAT(data_criacao, '%Y-%m') as month,
-        COUNT(*) as count
-    FROM eventos 
-    WHERE id_organizador = ? 
-    AND data_criacao >= DATE_SUB(NOW(), INTERVAL ? MONTH)
-    GROUP BY DATE_FORMAT(data_criacao, '%Y-%m')
-    ORDER BY month
-");
-$stmt->execute([$userId, $months]);
-$eventsByMonthData = $stmt->fetchAll();
+if (!$eventsByMonth) {
+    $eventsByMonth = ['labels' => [], 'data' => []];
+}
 
-$eventsByMonth = ['labels' => [], 'data' => []];
-for ($i = $months - 1; $i >= 0; $i--) {
-    $month = date('Y-m', strtotime("-$i months"));
-    $monthLabel = date('M/y', strtotime("-$i months"));
-    
-    $eventsByMonth['labels'][] = $monthLabel;
-    
-    $count = 0;
-    foreach ($eventsByMonthData as $result) {
-        if ($result['month'] === $month) {
-            $count = (int) $result['count'];
-            break;
+if (!$subscriptionsByMonth) {
+    $subscriptionsByMonth = ['labels' => [], 'data' => []];
+}
+
+if (!$eventsByCategory) {
+    $eventsByCategory = ['labels' => ['Nenhuma categoria'], 'data' => [0]];
+}
+
+if (!$eventsByStatus) {
+    $eventsByStatus = ['labels' => ['Sem dados'], 'data' => [0]];
+}
+
+if (!$topEvents) {
+    $topEvents = [];
+}
+
+if (!$revenueStats) {
+    $revenueStats = [
+        'labels' => [],
+        'data' => [],
+        'total' => 0,
+        'average' => 0
+    ];
+}
+
+// Calcular crescimento dos participantes (simulado se não houver dados suficientes)
+$participantGrowth = 0;
+if ($participantStats && isset($participantStats['new_participants']['data'])) {
+    $data = $participantStats['new_participants']['data'];
+    if (count($data) >= 2) {
+        $current = array_slice($data, -3); // Últimos 3 meses
+        $previous = array_slice($data, -6, 3); // 3 meses anteriores
+        
+        $currentSum = array_sum($current);
+        $previousSum = array_sum($previous);
+        
+        if ($previousSum > 0) {
+            $participantGrowth = round((($currentSum - $previousSum) / $previousSum) * 100, 1);
         }
     }
-    $eventsByMonth['data'][] = $count;
 }
-
-// 3. Inscrições por mês
-$stmt = $conn->prepare("
-    SELECT 
-        DATE_FORMAT(i.data_inscricao, '%Y-%m') as month,
-        COUNT(*) as count
-    FROM inscricoes i 
-    INNER JOIN eventos e ON i.id_evento = e.id_evento
-    WHERE e.id_organizador = ? 
-    AND i.status = 'confirmada'
-    AND i.data_inscricao >= DATE_SUB(NOW(), INTERVAL ? MONTH)
-    GROUP BY DATE_FORMAT(i.data_inscricao, '%Y-%m')
-    ORDER BY month
-");
-$stmt->execute([$userId, $months]);
-$subscriptionsByMonthData = $stmt->fetchAll();
-
-$subscriptionsByMonth = ['labels' => [], 'data' => []];
-for ($i = $months - 1; $i >= 0; $i--) {
-    $month = date('Y-m', strtotime("-$i months"));
-    $monthLabel = date('M/y', strtotime("-$i months"));
-    
-    $subscriptionsByMonth['labels'][] = $monthLabel;
-    
-    $count = 0;
-    foreach ($subscriptionsByMonthData as $result) {
-        if ($result['month'] === $month) {
-            $count = (int) $result['count'];
-            break;
-        }
-    }
-    $subscriptionsByMonth['data'][] = $count;
-}
-
-// 4. Eventos por categoria
-$stmt = $conn->prepare("
-    SELECT 
-        COALESCE(c.nome, 'Sem Categoria') as category_name,
-        COUNT(*) as count
-    FROM eventos e 
-    LEFT JOIN categorias c ON e.id_categoria = c.id_categoria
-    WHERE e.id_organizador = ?
-    GROUP BY e.id_categoria, c.nome
-    ORDER BY count DESC
-    LIMIT 10
-");
-$stmt->execute([$userId]);
-$categoryData = $stmt->fetchAll();
-
-$eventsByCategory = ['labels' => [], 'data' => []];
-foreach ($categoryData as $result) {
-    $eventsByCategory['labels'][] = $result['category_name'];
-    $eventsByCategory['data'][] = (int) $result['count'];
-}
-
-// 5. Eventos por status
-$stmt = $conn->prepare("
-    SELECT 
-        status,
-        COUNT(*) as count
-    FROM eventos 
-    WHERE id_organizador = ?
-    GROUP BY status
-    ORDER BY count DESC
-");
-$stmt->execute([$userId]);
-$statusData = $stmt->fetchAll();
-
-$statusMap = [
-    'publicado' => 'Publicados',
-    'rascunho' => 'Rascunhos',
-    'cancelado' => 'Cancelados',
-    'finalizado' => 'Finalizados'
-];
-
-$eventsByStatus = ['labels' => [], 'data' => []];
-foreach ($statusData as $result) {
-    $eventsByStatus['labels'][] = $statusMap[$result['status']] ?? ucfirst($result['status']);
-    $eventsByStatus['data'][] = (int) $result['count'];
-}
-
-// 6. Top eventos por popularidade
-$stmt = $conn->prepare("
-    SELECT 
-        e.id_evento,
-        e.titulo,
-        e.data_inicio,
-        e.preco,
-        e.evento_gratuito,
-        c.nome as categoria,
-        COUNT(i.id_inscricao) as total_inscricoes,
-        AVG(i.avaliacao_evento) as avg_rating
-    FROM eventos e
-    LEFT JOIN inscricoes i ON e.id_evento = i.id_evento AND i.status = 'confirmada'
-    LEFT JOIN categorias c ON e.id_categoria = c.id_categoria
-    WHERE e.id_organizador = ?
-    GROUP BY e.id_evento
-    ORDER BY total_inscricoes DESC, avg_rating DESC
-    LIMIT 5
-");
-$stmt->execute([$userId]);
-$topEvents = $stmt->fetchAll();
-
-foreach ($topEvents as &$evento) {
-    $evento['total_inscricoes'] = (int) $evento['total_inscricoes'];
-    $evento['avg_rating'] = $evento['avg_rating'] ? round($evento['avg_rating'], 1) : 0;
-    $evento['data_inicio_formatada'] = date('d/m/Y', strtotime($evento['data_inicio']));
-    $evento['preco_formatado'] = $evento['evento_gratuito'] ? 'Gratuito' : 'R$ ' . number_format($evento['preco'], 2, ',', '.');
-}
-
-// 7. Estatísticas de receita
-$stmt = $conn->prepare("
-    SELECT 
-        DATE_FORMAT(i.data_inscricao, '%Y-%m') as month,
-        SUM(e.preco) as revenue
-    FROM inscricoes i 
-    INNER JOIN eventos e ON i.id_evento = e.id_evento
-    WHERE e.id_organizador = ? 
-    AND i.status = 'confirmada'
-    AND e.evento_gratuito = 0
-    AND i.data_inscricao >= DATE_SUB(NOW(), INTERVAL ? MONTH)
-    GROUP BY DATE_FORMAT(i.data_inscricao, '%Y-%m')
-    ORDER BY month
-");
-$stmt->execute([$userId, $months]);
-$revenueData = $stmt->fetchAll();
-
-$revenueStats = ['labels' => [], 'data' => [], 'total' => 0, 'average' => 0];
-$total = 0;
-
-for ($i = $months - 1; $i >= 0; $i--) {
-    $month = date('Y-m', strtotime("-$i months"));
-    $monthLabel = date('M/y', strtotime("-$i months"));
-    
-    $revenueStats['labels'][] = $monthLabel;
-    
-    $revenue = 0;
-    foreach ($revenueData as $result) {
-        if ($result['month'] === $month) {
-            $revenue = (float) $result['revenue'];
-            break;
-        }
-    }
-    $revenueStats['data'][] = $revenue;
-    $total += $revenue;
-}
-
-$revenueStats['total'] = $total;
-$revenueStats['average'] = $months > 0 ? $total / $months : 0;
 
 // Mapear períodos para labels
 $periodLabels = [
@@ -363,6 +176,7 @@ $periodLabels = [
         .report-card.success { border-left-color: #28a745; }
         .report-card.warning { border-left-color: #ffc107; }
         .report-card.info { border-left-color: #17a2b8; }
+        .report-card.danger { border-left-color: #dc3545; }
         
         .metric-card {
             background: white;
@@ -395,8 +209,6 @@ $periodLabels = [
             padding: 2rem;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
             margin-bottom: 2rem;
-            position: relative;
-            height: 400px;
         }
         
         .table-card {
@@ -404,6 +216,10 @@ $periodLabels = [
             border-radius: 1rem;
             overflow: hidden;
             box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+        }
+        
+        .table-card .table {
+            margin-bottom: 0;
         }
         
         .period-selector {
@@ -426,31 +242,20 @@ $periodLabels = [
             border: none;
         }
 
-        .no-data {
+        .loading-spinner {
+            display: none;
             text-align: center;
-            padding: 3rem;
-            color: #6c757d;
+            padding: 2rem;
         }
 
-        .success-badge {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 1050;
+        .no-data {
+            text-align: center;
+            padding: 2rem;
+            color: #6c757d;
         }
     </style>
 </head>
 <body>
-    <!-- Success Badge -->
-    <div class="success-badge">
-        <div class="alert alert-success alert-dismissible">
-            <i class="fas fa-check-circle me-2"></i>
-            <strong>Dados Reais</strong><br>
-            Seus relatórios personalizados!
-            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-        </div>
-    </div>
-
     <!-- Header -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
@@ -490,19 +295,16 @@ $periodLabels = [
                 <div class="col-md-8">
                     <h1><i class="fas fa-chart-bar me-2"></i>Relatórios</h1>
                     <p class="mb-0 fs-5">Acompanhe o desempenho dos seus eventos</p>
-                    <small class="opacity-75">
-                        Período: <?php echo $periodLabels[$periodo] ?? 'Personalizado'; ?> | 
-                        Dados em tempo real do seu organizador
-                    </small>
+                    <small class="opacity-75">Período: <?php echo $periodLabels[$periodo] ?? 'Personalizado'; ?></small>
                 </div>
                 <div class="col-md-4 text-md-end">
                     <div class="btn-group">
                         <button class="btn btn-light" onclick="window.print()">
                             <i class="fas fa-print me-2"></i>Imprimir
                         </button>
-                        <a href="../analytics/dashboard.php" class="btn btn-outline-light">
-                            <i class="fas fa-chart-line me-2"></i>Analytics Avançado
-                        </a>
+                        <button class="btn btn-outline-light" onclick="exportData()">
+                            <i class="fas fa-download me-2"></i>Exportar
+                        </button>
                     </div>
                 </div>
             </div>
@@ -526,6 +328,14 @@ $periodLabels = [
                     </a>
                 </div>
             </div>
+        </div>
+
+        <!-- Loading Spinner -->
+        <div class="loading-spinner" id="loadingSpinner">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Carregando...</span>
+            </div>
+            <p class="mt-2">Carregando dados...</p>
         </div>
 
         <!-- Métricas Principais -->
@@ -563,7 +373,7 @@ $periodLabels = [
             
             <div class="col-lg-3 col-md-6">
                 <div class="metric-card">
-                    <div class="metric-number metric-info"><?php echo $overview['avg_rating']; ?></div>
+                    <div class="metric-number metric-info"><?php echo number_format($overview['avg_rating'], 1); ?></div>
                     <h6>Avaliação Média</h6>
                     <small class="text-warning">
                         <?php for($i = 1; $i <= 5; $i++): ?>
@@ -574,25 +384,6 @@ $periodLabels = [
             </div>
         </div>
 
-        <?php if ($overview['total_events'] == 0): ?>
-        <!-- Primeira Experiência para Usuários sem Dados -->
-        <div class="row">
-            <div class="col-12">
-                <div class="report-card text-center">
-                    <i class="fas fa-rocket fa-4x text-primary mb-4"></i>
-                    <h3>Bem-vindo aos Relatórios!</h3>
-                    <p class="mb-4">Você ainda não criou nenhum evento. Que tal começar criando seu primeiro evento para ver relatórios incríveis aqui?</p>
-                    <a href="../events/create.php" class="btn btn-primary btn-lg me-3">
-                        <i class="fas fa-plus me-2"></i>Criar Primeiro Evento
-                    </a>
-                    <a href="<?php echo $dashboardUrl; ?>" class="btn btn-outline-primary btn-lg">
-                        <i class="fas fa-arrow-left me-2"></i>Voltar ao Dashboard
-                    </a>
-                </div>
-            </div>
-        </div>
-        <?php else: ?>
-
         <!-- Gráficos -->
         <div class="row">
             <div class="col-lg-8">
@@ -600,7 +391,14 @@ $periodLabels = [
                     <h5 class="mb-4">
                         <i class="fas fa-chart-line me-2"></i>Eventos e Inscrições por Período
                     </h5>
-                    <canvas id="eventosChart"></canvas>
+                    <?php if (empty($eventsByMonth['data']) && empty($subscriptionsByMonth['data'])): ?>
+                        <div class="no-data">
+                            <i class="fas fa-chart-line fa-3x mb-3"></i>
+                            <p>Nenhum dado disponível para o período selecionado</p>
+                        </div>
+                    <?php else: ?>
+                        <canvas id="eventosChart" width="400" height="200"></canvas>
+                    <?php endif; ?>
                 </div>
             </div>
             
@@ -612,24 +410,24 @@ $periodLabels = [
                     <?php if (empty($eventsByStatus['data']) || array_sum($eventsByStatus['data']) == 0): ?>
                         <div class="no-data">
                             <i class="fas fa-chart-pie fa-3x mb-3"></i>
-                            <p>Nenhum evento ainda</p>
+                            <p>Nenhum evento criado ainda</p>
                         </div>
                     <?php else: ?>
-                        <canvas id="statusChart"></canvas>
+                        <canvas id="statusChart" width="400" height="200"></canvas>
                     <?php endif; ?>
                 </div>
             </div>
         </div>
 
         <!-- Receita por Período -->
-        <?php if ($revenueStats['total'] > 0): ?>
+        <?php if (!empty($revenueStats['data']) && array_sum($revenueStats['data']) > 0): ?>
         <div class="row">
             <div class="col-12">
                 <div class="chart-container">
                     <h5 class="mb-4">
                         <i class="fas fa-dollar-sign me-2"></i>Receita por Período
                     </h5>
-                    <canvas id="revenueChart"></canvas>
+                    <canvas id="revenueChart" width="400" height="200"></canvas>
                 </div>
             </div>
         </div>
@@ -641,12 +439,15 @@ $periodLabels = [
             <div class="col-lg-8">
                 <div class="report-card">
                     <h5 class="mb-4">
-                        <i class="fas fa-trophy me-2"></i>Seus Eventos Mais Populares
+                        <i class="fas fa-trophy me-2"></i>Top 5 Eventos Mais Populares
                     </h5>
                     <?php if (empty($topEvents)): ?>
                         <div class="no-data">
                             <i class="fas fa-trophy fa-3x mb-3"></i>
                             <p>Nenhum evento com inscrições ainda</p>
+                            <a href="../events/create.php" class="btn btn-primary">
+                                <i class="fas fa-plus me-2"></i>Criar Primeiro Evento
+                            </a>
                         </div>
                     <?php else: ?>
                         <div class="table-card">
@@ -671,7 +472,7 @@ $periodLabels = [
                                                 </div>
                                             </td>
                                             <td>
-                                                <small><?php echo $evento['data_inicio_formatada']; ?></small>
+                                                <small><?php echo $evento['data_inicio_formatada'] ?? date('d/m/Y', strtotime($evento['data_inicio'])); ?></small>
                                             </td>
                                             <td>
                                                 <span class="badge bg-primary"><?php echo $evento['total_inscricoes']; ?></span>
@@ -688,7 +489,7 @@ $periodLabels = [
                                             </td>
                                             <td>
                                                 <span class="text-success fw-bold">
-                                                    <?php echo $evento['preco_formatado']; ?>
+                                                    <?php echo $evento['preco_formatado'] ?? ($evento['evento_gratuito'] ? 'Gratuito' : 'R$ ' . number_format($evento['preco'], 2, ',', '.')); ?>
                                                 </span>
                                             </td>
                                         </tr>
@@ -700,45 +501,127 @@ $periodLabels = [
                 </div>
             </div>
             
-            <!-- Categorias e Status -->
+            <!-- Categorias -->
             <div class="col-lg-4">
-                <?php if (!empty($eventsByCategory['data']) && array_sum($eventsByCategory['data']) > 0): ?>
-                <div class="report-card mb-4">
-                    <h6 class="mb-3">
-                        <i class="fas fa-tags me-2"></i>Por Categoria
-                    </h6>
-                    <div class="table-card">
-                        <table class="table table-sm">
-                            <tbody>
-                                <?php for ($i = 0; $i < count($eventsByCategory['labels']); $i++): ?>
-                                    <tr>
-                                        <td><?php echo htmlspecialchars($eventsByCategory['labels'][$i]); ?></td>
-                                        <td class="text-end">
-                                            <span class="badge bg-primary"><?php echo $eventsByCategory['data'][$i]; ?></span>
-                                        </td>
-                                    </tr>
-                                <?php endfor; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-                <?php endif; ?>
-
                 <div class="report-card">
-                    <h6 class="mb-3">
-                        <i class="fas fa-info-circle me-2"></i>Resumo do Período
-                    </h6>
-                    <div class="mb-3">
-                        <small class="text-muted d-block">Período analisado:</small>
-                        <strong><?php echo $periodLabels[$periodo]; ?></strong>
-                    </div>
-                    
-                    <?php if ($overview['unique_participants'] > 0): ?>
-                        <div class="mb-3">
-                            <small class="text-muted d-block">Participantes únicos:</small>
-                            <strong><?php echo number_format($overview['unique_participants']); ?></strong>
+                    <h5 class="mb-4">
+                        <i class="fas fa-tags me-2"></i>Eventos por Categoria
+                    </h5>
+                    <?php if (empty($eventsByCategory['data']) || array_sum($eventsByCategory['data']) == 0): ?>
+                        <div class="no-data">
+                            <i class="fas fa-tags fa-2x mb-2"></i>
+                            <p class="small">Nenhuma categoria definida</p>
+                        </div>
+                    <?php else: ?>
+                        <div class="table-card">
+                            <table class="table table-sm">
+                                <tbody>
+                                    <?php for ($i = 0; $i < count($eventsByCategory['labels']); $i++): ?>
+                                        <tr>
+                                            <td><?php echo htmlspecialchars($eventsByCategory['labels'][$i]); ?></td>
+                                            <td class="text-end">
+                                                <span class="badge bg-primary"><?php echo $eventsByCategory['data'][$i]; ?></span>
+                                            </td>
+                                        </tr>
+                                    <?php endfor; ?>
+                                </tbody>
+                            </table>
                         </div>
                     <?php endif; ?>
+                </div>
+            </div>
+        </div>
+
+        <!-- Insights e Recomendações -->
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="report-card info">
+                    <h5 class="mb-4">
+                        <i class="fas fa-lightbulb me-2"></i>Insights e Recomendações
+                    </h5>
+                    <div class="row">
+                        <?php if ($overview['total_events'] > 0): ?>
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-start">
+                                    <i class="fas fa-chart-line fa-lg text-success me-3 mt-1"></i>
+                                    <div>
+                                        <h6>Performance Geral</h6>
+                                        <p class="mb-0 small text-muted">
+                                            Você tem <?php echo $overview['total_events']; ?> eventos com 
+                                            <?php echo $overview['total_subscriptions']; ?> inscrições totais.
+                                            <?php if ($overview['avg_rating'] >= 4): ?>
+                                                Excelente avaliação média!
+                                            <?php endif; ?>
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <?php if ($overview['growth_rate'] > 0): ?>
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-start">
+                                    <i class="fas fa-trending-up fa-lg text-success me-3 mt-1"></i>
+                                    <div>
+                                        <h6>Crescimento Positivo</h6>
+                                        <p class="mb-0 small text-muted">
+                                            Seus eventos cresceram <?php echo $overview['growth_rate']; ?>% 
+                                            comparado ao período anterior. Continue assim!
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <?php if ($overview['total_revenue'] > 0): ?>
+                            <div class="col-md-6 mb-3">
+                                <div class="d-flex align-items-start">
+                                    <i class="fas fa-dollar-sign fa-lg text-warning me-3 mt-1"></i>
+                                    <div>
+                                        <h6>Receita Gerada</h6>
+                                        <p class="mb-0 small text-muted">
+                                            Total de R$ <?php echo number_format($overview['total_revenue'], 2, ',', '.'); ?> 
+                                            em eventos pagos. Média de R$ <?php echo number_format($revenueStats['average'], 2, ',', '.'); ?>/mês.
+                                        </p>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+                        
+                        <?php if ($overview['total_events'] == 0): ?>
+                            <div class="col-12">
+                                <div class="d-flex align-items-start">
+                                    <i class="fas fa-rocket fa-lg text-primary me-3 mt-1"></i>
+                                    <div>
+                                        <h6>Comece Agora!</h6>
+                                        <p class="mb-3 small text-muted">
+                                            Você ainda não criou nenhum evento. Que tal começar criando seu primeiro evento?
+                                        </p>
+                                        <a href="../events/create.php" class="btn btn-primary btn-sm">
+                                            <i class="fas fa-plus me-2"></i>Criar Primeiro Evento
+                                        </a>
+                                    </div>
+                                </div>
+                            </div>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="report-card success">
+                    <h5 class="mb-4">
+                        <i class="fas fa-info-circle me-2"></i>Informações
+                    </h5>
+                    <div class="mb-3">
+                        <small class="text-muted d-block">Último período analisado:</small>
+                        <strong><?php echo $periodLabels[$periodo] ?? 'Personalizado'; ?></strong>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <small class="text-muted d-block">Participantes únicos:</small>
+                        <strong><?php echo number_format($overview['unique_participants']); ?></strong>
+                    </div>
                     
                     <?php if ($overview['total_revenue'] > 0): ?>
                         <div class="mb-3">
@@ -754,118 +637,6 @@ $periodLabels = [
                 </div>
             </div>
         </div>
-
-        <!-- Insights -->
-        <div class="row">
-            <div class="col-12">
-                <div class="report-card info">
-                    <h5 class="mb-4">
-                        <i class="fas fa-lightbulb me-2"></i>Insights dos Seus Eventos
-                    </h5>
-                    <div class="row">
-                        <?php if ($overview['total_events'] > 0): ?>
-                            <div class="col-md-4 mb-3">
-                                <div class="d-flex align-items-start">
-                                    <i class="fas fa-chart-line fa-lg text-success me-3 mt-1"></i>
-                                    <div>
-                                        <h6>Performance Geral</h6>
-                                        <p class="mb-0 small text-muted">
-                                            Você tem <?php echo $overview['total_events']; ?> eventos com 
-                                            <?php echo $overview['total_subscriptions']; ?> inscrições totais.
-                                            <?php if ($overview['avg_rating'] >= 4): ?>
-                                                Excelente avaliação média de <?php echo $overview['avg_rating']; ?>!
-                                            <?php elseif ($overview['avg_rating'] > 0): ?>
-                                                Avaliação média de <?php echo $overview['avg_rating']; ?>.
-                                            <?php endif; ?>
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-                        
-                        <?php if ($overview['growth_rate'] > 0): ?>
-                            <div class="col-md-4 mb-3">
-                                <div class="d-flex align-items-start">
-                                    <i class="fas fa-trending-up fa-lg text-success me-3 mt-1"></i>
-                                    <div>
-                                        <h6>Crescimento Positivo</h6>
-                                        <p class="mb-0 small text-muted">
-                                            Seus eventos cresceram <?php echo $overview['growth_rate']; ?>% 
-                                            comparado ao período anterior. Continue assim!
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        <?php elseif ($overview['growth_rate'] < 0): ?>
-                            <div class="col-md-4 mb-3">
-                                <div class="d-flex align-items-start">
-                                    <i class="fas fa-trending-down fa-lg text-warning me-3 mt-1"></i>
-                                    <div>
-                                        <h6>Oportunidade de Melhoria</h6>
-                                        <p class="mb-0 small text-muted">
-                                            Houve uma queda de <?php echo abs($overview['growth_rate']); ?>% 
-                                            no período. Que tal criar mais eventos?
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-                        
-                        <?php if ($overview['total_revenue'] > 0): ?>
-                            <div class="col-md-4 mb-3">
-                                <div class="d-flex align-items-start">
-                                    <i class="fas fa-dollar-sign fa-lg text-warning me-3 mt-1"></i>
-                                    <div>
-                                        <h6>Receita Gerada</h6>
-                                        <p class="mb-0 small text-muted">
-                                            Total de R$ <?php echo number_format($overview['total_revenue'], 2, ',', '.'); ?> 
-                                            em eventos pagos. Média de R$ <?php echo number_format($revenueStats['average'], 2, ',', '.'); ?>/mês.
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-
-                        <?php if (count($eventsByCategory['labels']) > 1): ?>
-                            <div class="col-md-4 mb-3">
-                                <div class="d-flex align-items-start">
-                                    <i class="fas fa-tags fa-lg text-info me-3 mt-1"></i>
-                                    <div>
-                                        <h6>Diversidade de Temas</h6>
-                                        <p class="mb-0 small text-muted">
-                                            Você organiza eventos em <?php echo count($eventsByCategory['labels']); ?> categorias diferentes. 
-                                            Categoria mais popular: <strong><?php echo $eventsByCategory['labels'][0]; ?></strong>
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-
-                        <?php if ($overview['unique_participants'] > 0 && $overview['total_subscriptions'] > 0): ?>
-                            <div class="col-md-4 mb-3">
-                                <div class="d-flex align-items-start">
-                                    <i class="fas fa-users fa-lg text-primary me-3 mt-1"></i>
-                                    <div>
-                                        <h6>Engajamento</h6>
-                                        <p class="mb-0 small text-muted">
-                                            <?php 
-                                            $repeatedParticipants = round(($overview['total_subscriptions'] - $overview['unique_participants']) / max($overview['unique_participants'], 1), 1);
-                                            if ($repeatedParticipants > 0.5): ?>
-                                                Ótimo! Você tem participantes recorrentes, com média de <?php echo $repeatedParticipants; ?> inscrições por pessoa.
-                                            <?php else: ?>
-                                                Foque em fidelizar participantes para aumentar o engajamento.
-                                            <?php endif; ?>
-                                        </p>
-                                    </div>
-                                </div>
-                            </div>
-                        <?php endif; ?>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <?php endif; // fim do else para usuários com dados ?>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
@@ -878,14 +649,14 @@ $periodLabels = [
             const eventsByStatus = <?php echo json_encode($eventsByStatus); ?>;
             const revenueStats = <?php echo json_encode($revenueStats); ?>;
 
-            // Gráfico de Eventos e Inscrições
+            // Gráfico de Eventos e Inscrições se houver dados
             const eventsChartElement = document.getElementById('eventosChart');
-            if (eventsChartElement) {
+            if (eventsChartElement && (eventsByMonth.data.length > 0 || subscriptionsByMonth.data.length > 0)) {
                 const ctx1 = eventsChartElement.getContext('2d');
                 new Chart(ctx1, {
                     type: 'line',
                     data: {
-                        labels: eventsByMonth.labels,
+                        labels: eventsByMonth.labels || subscriptionsByMonth.labels,
                         datasets: [{
                             label: 'Eventos Criados',
                             data: eventsByMonth.data,
@@ -929,131 +700,3 @@ $periodLabels = [
                                     display: true,
                                     text: 'Inscrições'
                                 },
-                                beginAtZero: true,
-                                grid: {
-                                    drawOnChartArea: false,
-                                },
-                            }
-                        }
-                    }
-                });
-            }
-
-            // Gráfico de Status dos Eventos
-            const statusChartElement = document.getElementById('statusChart');
-            if (statusChartElement && eventsByStatus.data.length > 0 && eventsByStatus.data.some(val => val > 0)) {
-                const ctx2 = statusChartElement.getContext('2d');
-                new Chart(ctx2, {
-                    type: 'doughnut',
-                    data: {
-                        labels: eventsByStatus.labels,
-                        datasets: [{
-                            data: eventsByStatus.data,
-                            backgroundColor: [
-                                '#28a745', // Publicados - verde
-                                '#ffc107', // Rascunhos - amarelo
-                                '#dc3545', // Cancelados - vermelho
-                                '#6c757d'  // Finalizados - cinza
-                            ],
-                            borderWidth: 2,
-                            borderColor: '#fff'
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                position: 'bottom'
-                            }
-                        }
-                    }
-                });
-            }
-
-            // Gráfico de Receita
-            const revenueChartElement = document.getElementById('revenueChart');
-            if (revenueChartElement && revenueStats.data && revenueStats.data.some(val => val > 0)) {
-                const ctx3 = revenueChartElement.getContext('2d');
-                new Chart(ctx3, {
-                    type: 'bar',
-                    data: {
-                        labels: revenueStats.labels,
-                        datasets: [{
-                            label: 'Receita (R$)',
-                            data: revenueStats.data,
-                            backgroundColor: 'rgba(255, 193, 7, 0.8)',
-                            borderColor: '#ffc107',
-                            borderWidth: 1,
-                            borderRadius: 4
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: {
-                                display: false
-                            }
-                        },
-                        scales: {
-                            y: {
-                                beginAtZero: true,
-                                ticks: {
-                                    callback: function(value) {
-                                        return 'R$ ' + value.toLocaleString('pt-BR', {
-                                            minimumFractionDigits: 2,
-                                            maximumFractionDigits: 2
-                                        });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-
-            // Animação das métricas
-            const metricNumbers = document.querySelectorAll('.metric-number');
-            metricNumbers.forEach(metric => {
-                const text = metric.textContent;
-                const number = parseFloat(text.replace(/[^\d.,]/g, '').replace(',', '.'));
-                
-                if (!isNaN(number) && number > 0) {
-                    let current = 0;
-                    const increment = number / 50;
-                    const timer = setInterval(() => {
-                        current += increment;
-                        if (current >= number) {
-                            metric.textContent = text;
-                            clearInterval(timer);
-                        } else {
-                            if (text.includes('R)) {
-                                metric.textContent = 'R$ ' + current.toLocaleString('pt-BR', {
-                                    minimumFractionDigits: 2,
-                                    maximumFractionDigits: 2
-                                });
-                            } else if (text.includes('.')) {
-                                metric.textContent = current.toFixed(1);
-                            } else {
-                                metric.textContent = Math.floor(current).toLocaleString('pt-BR');
-                            }
-                        }
-                    }, 30);
-                }
-            });
-
-            // Auto-hide alerts
-            setTimeout(() => {
-                const alerts = document.querySelectorAll('.alert-dismissible');
-                alerts.forEach(alert => {
-                    const bsAlert = bootstrap.Alert.getOrCreateInstance(alert);
-                    if (bsAlert) {
-                        bsAlert.close();
-                    }
-                });
-            }, 4000);
-        });
-    </script>
-</body>
-</html>
