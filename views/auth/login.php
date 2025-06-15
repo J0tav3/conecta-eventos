@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// PÁGINA DE LOGIN - VERSÃO CORRIGIDA
+// PÁGINA DE LOGIN - VERSÃO SEM CONTAS DEMO
 // Local: views/auth/login.php
 // ==========================================
 
@@ -24,8 +24,9 @@ $title = "Login - Conecta Eventos";
 $error_message = '';
 $success_message = '';
 
-// URL base correta
-$homeUrl = '../../index.php';
+// URL base
+$baseUrl = 'https://conecta-eventos-production.up.railway.app';
+$homeUrl = $baseUrl . '/index.php';
 
 // Verificar se veio da página de registro
 if (isset($_GET['registered']) && $_GET['registered'] === '1') {
@@ -60,30 +61,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     $error_message = $result['message'];
                 }
             } else {
-                // Fallback - sistema simples
-                $demo_accounts = [
-                    'admin@conectaeventos.com' => ['senha' => 'admin123', 'tipo' => 'organizador', 'nome' => 'Administrador'],
-                    'user@conectaeventos.com' => ['senha' => 'user123', 'tipo' => 'participante', 'nome' => 'Usuário Demo']
-                ];
-                
-                if (isset($demo_accounts[$email]) && $demo_accounts[$email]['senha'] === $senha) {
-                    // Login bem-sucedido
-                    $_SESSION['user_id'] = 1;
-                    $_SESSION['user_email'] = $email;
-                    $_SESSION['user_name'] = $demo_accounts[$email]['nome'];
-                    $_SESSION['user_type'] = $demo_accounts[$email]['tipo'];
-                    $_SESSION['logged_in'] = true;
-                    
-                    // Redirecionar baseado no tipo
-                    if ($demo_accounts[$email]['tipo'] === 'organizador') {
-                        header("Location: ../dashboard/organizer.php");
-                    } else {
-                        header("Location: ../dashboard/participant.php");
-                    }
-                    exit;
-                } else {
-                    $error_message = "Email ou senha incorretos.";
-                }
+                $error_message = "Sistema de autenticação não disponível. Tente novamente mais tarde.";
             }
         } catch (Exception $e) {
             error_log("Erro no login: " . $e->getMessage());
@@ -338,31 +316,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                             </small>
                         </div>
                     </form>
-                    
-                    <!-- Demo Login -->
-                    <div class="mt-4 p-3 bg-light rounded">
-                        <h6 class="text-muted mb-3">
-                            <i class="fas fa-info-circle me-2"></i>Contas de Teste
-                        </h6>
-                        
-                        <div class="row">
-                            <div class="col-md-6 mb-2">
-                                <button type="button" class="btn btn-sm btn-outline-primary w-100" onclick="fillLogin('admin@conectaeventos.com', 'admin123')">
-                                    <i class="fas fa-user-cog me-1"></i>Login Organizador
-                                </button>
-                            </div>
-                            <div class="col-md-6 mb-2">
-                                <button type="button" class="btn btn-sm btn-outline-success w-100" onclick="fillLogin('user@conectaeventos.com', 'user123')">
-                                    <i class="fas fa-user me-1"></i>Login Participante
-                                </button>
-                            </div>
-                        </div>
-                        
-                        <small class="text-muted">
-                            <strong>Organizador:</strong> admin@conectaeventos.com / admin123<br>
-                            <strong>Participante:</strong> user@conectaeventos.com / user123
-                        </small>
-                    </div>
                 </div>
             </div>
         </div>
@@ -371,12 +324,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
     
     <script>
-        // Função para preencher login
-        function fillLogin(email, senha) {
-            document.getElementById('email').value = email;
-            document.getElementById('senha').value = senha;
-        }
-        
         document.addEventListener('DOMContentLoaded', function() {
             // Toggle password visibility
             const togglePassword = document.getElementById('togglePassword');
