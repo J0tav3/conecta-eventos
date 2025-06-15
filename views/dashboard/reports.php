@@ -17,8 +17,25 @@ if (!isset($_SESSION['user_type']) || $_SESSION['user_type'] !== 'organizador') 
     exit;
 }
 
-// Incluir configurações
+// Incluir configurações e dependências
 require_once '../../config/config.php';
+require_once '../../includes/session.php';
+
+// Verificar se as funções de sessão estão disponíveis
+if (!function_exists('isLoggedIn') || !function_exists('isOrganizer')) {
+    // Implementar verificações básicas se as funções não existirem
+    function isLoggedIn() {
+        return isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;
+    }
+    
+    function isOrganizer() {
+        return isset($_SESSION['user_type']) && $_SESSION['user_type'] === 'organizador';
+    }
+    
+    function getUserId() {
+        return $_SESSION['user_id'] ?? 0;
+    }
+}
 
 $title = "Relatórios - Conecta Eventos";
 $userName = $_SESSION['user_name'] ?? 'Organizador';
