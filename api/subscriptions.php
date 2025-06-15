@@ -347,15 +347,15 @@ function getSubscriptionStatus($conn, $eventId, $userId) {
             SELECT i.*, e.titulo, e.data_inicio, e.horario_inicio, e.local_cidade, e.local_estado
             FROM inscricoes i
             JOIN eventos e ON i.id_evento = e.id_evento
-            WHERE i.id_evento = ? AND i.id_participante = ?
+            WHERE i.id_evento = ? AND i.id_participante = ? AND i.status != 'cancelada'
             ORDER BY i.data_inscricao DESC
             LIMIT 1
         ");
         $stmt->execute([$eventId, $userId]);
         $inscricao = $stmt->fetch(PDO::FETCH_ASSOC);
         
-        if ($inscricao) {
-            logDebug("Inscrição encontrada", $inscricao);
+        if ($inscricao && $inscricao['status'] === 'confirmada') {
+            logDebug("Inscrição CONFIRMADA encontrada", $inscricao);
             return [
                 'success' => true,
                 'subscribed' => true,
@@ -363,11 +363,12 @@ function getSubscriptionStatus($conn, $eventId, $userId) {
                     'status' => $inscricao['status'],
                     'data_inscricao' => $inscricao['data_inscricao'],
                     'observacoes' => $inscricao['observacoes'],
-                    'evento_titulo' => $inscricao['titulo']
+                    'evento_titulo' => $inscricao['titulo'],
+                    'id_inscricao' => $inscricao['id_inscricao']
                 ]
             ];
         } else {
-            logDebug("Nenhuma inscrição encontrada");
+            logDebug("Nenhuma inscrição CONFIRMADA encontrada", ['inscricao_encontrada' => $inscricao ? 'sim' : 'nao']);
             return [
                 'success' => true,
                 'subscribed' => false,

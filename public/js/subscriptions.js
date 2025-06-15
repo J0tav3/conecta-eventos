@@ -13,19 +13,26 @@ class EventSubscriptionSystem {
     init() {
         this.bindEvents();
         
-        // Verificar cache primeiro para resposta mais rápida
+        // Verificar se há estado local primeiro
         const eventId = this.getEventId();
         if (eventId && this.isUserLoggedIn()) {
-            if (!this.loadStatusFromCache(eventId)) {
-                // Se não há cache válido, fazer requisição
-                this.checkSubscriptionStatus();
-            } else {
-                // Se há cache, fazer verificação em background
-                setTimeout(() => this.checkSubscriptionStatus(), 1000);
-            }
+            // Sempre verificar o servidor para ter dados atualizados
+            this.checkSubscriptionStatus();
         }
         
+        // Iniciar timer para garantir persistência visual
+        this.startPersistenceTimer();
+        
         console.log('Sistema de Inscrições inicializado');
+    }
+
+    startPersistenceTimer() {
+        // Verificar estado visual a cada 2 segundos para garantir persistência
+        setInterval(() => {
+            this.enforceVisualState();
+        }, 2000);
+        
+        console.log('Timer de persistência iniciado');
     }
 
     bindEvents() {
@@ -94,14 +101,21 @@ class EventSubscriptionSystem {
             console.log('Status de inscrição recebido:', result);
             
             if (result.success) {
+                // Sempre atualizar com dados do servidor
                 this.updateSubscriptionUI(result.subscribed, result.data);
                 
-                // Salvar status no sessionStorage para persistir entre reloads
+                // Salvar/atualizar status no sessionStorage
                 sessionStorage.setItem(`subscription_status_${eventId}`, JSON.stringify({
                     subscribed: result.subscribed,
                     data: result.data,
                     timestamp: Date.now()
                 }));
+                
+                // Se o usuário está inscrito, garantir que a UI reflita isso
+                if (result.subscribed && result.data) {
+                    console.log('Usuário confirmado como inscrito, atualizando UI');
+                    this.ensureSubscribedState(result.data);
+                }
             } else {
                 console.warn('Erro ao verificar status:', result.message);
             }
@@ -130,6 +144,52 @@ class EventSubscriptionSystem {
             console.error('Erro ao carregar cache:', error);
         }
         return false;
+    }
+
+    // Garantir que o estado de inscrito seja mantido
+    ensureSubscribedState(data) {
+        const subscribeBtn = document.getElementById('subscribe-btn');
+        const unsubscribeBtn = document.getElementById('unsubscribe-btn');
+        const subscriptionStatus = document.getElementById('subscription-status');
+        const subscriptionCard = document.querySelector('.subscription-card');
+
+        // Forçar estado visual de inscrito
+        if (subscribeBtn) {
+            subscribeBtn.style.display = 'none';
+        }
+        
+        if (unsubscribeBtn) {
+            unsubscribeBtn.style.display = 'inline-block';
+        }
+
+        if (subscriptionStatus && !subscriptionStatus.innerHTML.includes('inscrito')) {
+            const dataInscricao = data && data.data_inscricao ? 
+                new Date(data.data_inscricao).toLocaleDateString('pt-BR', {
+                    day: '2-digit',
+                    month: '2-digit', 
+                    year: 'numeric',
+                    hour: '2-digit',
+                    minute: '2-digit'
+                }) : '';
+            
+            subscriptionStatus.innerHTML = `
+                <div class="alert alert-success">
+                    <i class="fas fa-check-circle me-2"></i>
+                    <strong>Você está inscrito neste evento!</strong>
+                    ${dataInscricao ? `<br><small>Inscrito em: ${dataInscricao}</small>` : ''}
+                    ${data && data.status ? `<br><small>Status: ${data.status}</small>` : ''}
+                </div>
+            `;
+        }
+
+        if (subscriptionCard) {
+            subscriptionCard.classList.add('subscribed');
+            
+            const cardTitle = subscriptionCard.querySelector('h5');
+            if (cardTitle && !cardTitle.textContent.includes('Inscrito')) {
+                cardTitle.innerHTML = '<i class="fas fa-check-circle me-2"></i>Você está Inscrito!';
+            }
+        }
     }
 
     async handleSubscription() {
@@ -319,14 +379,24 @@ class EventSubscriptionSystem {
 
         console.log('Atualizando UI:', { isSubscribed, data });
 
+        // Salvar estado no DOM para persistência
+        if (container) {
+            container.setAttribute('data-subscription-state', isSubscribed ? 'subscribed' : 'not-subscribed');
+            if (isSubscribed && data) {
+                container.setAttribute('data-subscription-data', JSON.stringify(data));
+            }
+        }
+
         if (isSubscribed) {
             // Usuário está inscrito
             if (subscribeBtn) {
                 subscribeBtn.style.display = 'none';
+                subscribeBtn.setAttribute('data-hidden', 'true');
             }
             
             if (unsubscribeBtn) {
                 unsubscribeBtn.style.display = 'inline-block';
+                unsubscribeBtn.removeAttribute('data-hidden');
             }
 
             if (subscriptionStatus) {
@@ -339,7 +409,7 @@ class EventSubscriptionSystem {
                         minute: '2-digit'
                     }) : '';
                 
-                subscriptionStatus.innerHTML = `
+                const statusHtml = `
                     <div class="alert alert-success">
                         <i class="fas fa-check-circle me-2"></i>
                         <strong>Você está inscrito neste evento!</strong>
@@ -347,6 +417,9 @@ class EventSubscriptionSystem {
                         ${data && data.status ? `<br><small>Status: ${data.status}</small>` : ''}
                     </div>
                 `;
+                
+                subscriptionStatus.innerHTML = statusHtml;
+                subscriptionStatus.setAttribute('data-status', 'subscribed');
             }
 
             // Adicionar classe para indicar sucesso
@@ -361,11 +434,13 @@ class EventSubscriptionSystem {
             const subscriptionCard = document.querySelector('.subscription-card');
             if (subscriptionCard) {
                 subscriptionCard.classList.add('subscribed');
+                subscriptionCard.setAttribute('data-subscribed', 'true');
                 
                 // Atualizar título do card
                 const cardTitle = subscriptionCard.querySelector('h5');
-                if (cardTitle && !cardTitle.textContent.includes('Inscrito')) {
+                if (cardTitle) {
                     cardTitle.innerHTML = '<i class="fas fa-check-circle me-2"></i>Você está Inscrito!';
+                    cardTitle.setAttribute('data-original-title', cardTitle.getAttribute('data-original-title') || cardTitle.textContent);
                 }
             }
 
@@ -373,31 +448,84 @@ class EventSubscriptionSystem {
             // Usuário não está inscrito
             if (subscribeBtn) {
                 subscribeBtn.style.display = 'inline-block';
+                subscribeBtn.removeAttribute('data-hidden');
             }
             
             if (unsubscribeBtn) {
                 unsubscribeBtn.style.display = 'none';
+                unsubscribeBtn.setAttribute('data-hidden', 'true');
             }
 
             if (subscriptionStatus) {
                 subscriptionStatus.innerHTML = '';
+                subscriptionStatus.setAttribute('data-status', 'not-subscribed');
             }
 
             // Remover classe de inscrito
             const subscriptionCard = document.querySelector('.subscription-card');
             if (subscriptionCard) {
                 subscriptionCard.classList.remove('subscribed');
+                subscriptionCard.setAttribute('data-subscribed', 'false');
                 
                 // Restaurar título original do card
                 const cardTitle = subscriptionCard.querySelector('h5');
                 if (cardTitle) {
-                    const eventoGratuito = document.body.getAttribute('data-evento-gratuito') === '1';
-                    const preco = document.body.getAttribute('data-evento-preco') || '0';
-                    
-                    if (eventoGratuito) {
-                        cardTitle.innerHTML = '<i class="fas fa-ticket-alt me-2"></i>Evento Gratuito';
+                    const originalTitle = cardTitle.getAttribute('data-original-title');
+                    if (originalTitle) {
+                        cardTitle.innerHTML = originalTitle;
                     } else {
-                        cardTitle.innerHTML = `<i class="fas fa-ticket-alt me-2"></i>R$ ${parseFloat(preco).toFixed(2).replace('.', ',')}`;
+                        const eventoGratuito = document.body.getAttribute('data-evento-gratuito') === '1';
+                        const preco = document.body.getAttribute('data-evento-preco') || '0';
+                        
+                        if (eventoGratuito) {
+                            cardTitle.innerHTML = '<i class="fas fa-ticket-alt me-2"></i>Evento Gratuito';
+                        } else {
+                            cardTitle.innerHTML = `<i class="fas fa-ticket-alt me-2"></i>R$ ${parseFloat(preco).toFixed(2).replace('.', ',')}`;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Garantir que o estado persista visualmente
+        this.enforceVisualState();
+    }
+
+    // Força o estado visual correto (executado periodicamente)
+    enforceVisualState() {
+        const container = document.getElementById('subscription-container');
+        if (!container) return;
+
+        const savedState = container.getAttribute('data-subscription-state');
+        if (savedState === 'subscribed') {
+            const subscribeBtn = document.getElementById('subscribe-btn');
+            const unsubscribeBtn = document.getElementById('unsubscribe-btn');
+            
+            if (subscribeBtn && subscribeBtn.style.display !== 'none') {
+                subscribeBtn.style.display = 'none';
+                console.log('Forçando botão inscrever-se escondido');
+            }
+            
+            if (unsubscribeBtn && unsubscribeBtn.style.display !== 'inline-block') {
+                unsubscribeBtn.style.display = 'inline-block';
+                console.log('Forçando botão cancelar visível');
+            }
+
+            const subscriptionCard = document.querySelector('.subscription-card');
+            if (subscriptionCard && !subscriptionCard.classList.contains('subscribed')) {
+                subscriptionCard.classList.add('subscribed');
+                console.log('Forçando classe subscribed no card');
+            }
+
+            const subscriptionStatus = document.getElementById('subscription-status');
+            if (subscriptionStatus && !subscriptionStatus.innerHTML.includes('inscrito')) {
+                const savedData = container.getAttribute('data-subscription-data');
+                if (savedData) {
+                    try {
+                        const data = JSON.parse(savedData);
+                        this.updateSubscriptionUI(true, data);
+                    } catch (e) {
+                        console.error('Erro ao restaurar dados salvos:', e);
                     }
                 }
             }
