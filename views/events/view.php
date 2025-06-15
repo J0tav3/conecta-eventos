@@ -287,7 +287,10 @@ if ($isLoggedIn && $userType === 'participante') {
         }
     </style>
 </head>
-<body data-event-id="<?php echo $evento['id_evento']; ?>" <?php if ($isLoggedIn): ?>class="user-logged-in"<?php endif; ?>>
+<body data-event-id="<?php echo $evento['id_evento']; ?>" 
+      data-evento-gratuito="<?php echo $evento['evento_gratuito'] ? '1' : '0'; ?>"
+      data-evento-preco="<?php echo $evento['preco']; ?>"
+      <?php if ($isLoggedIn): ?>class="user-logged-in"<?php endif; ?>>
     <!-- Header -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
@@ -626,6 +629,7 @@ if ($isLoggedIn && $userType === 'participante') {
     
     <!-- Sistema de Inscrições JavaScript -->
     <script src="../../public/js/subscriptions.js"></script>
+    <script src="../../public/js/subscription-persistence.js"></script>
     
     <script>
         document.addEventListener('DOMContentLoaded', function() {

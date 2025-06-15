@@ -12,7 +12,19 @@ class EventSubscriptionSystem {
 
     init() {
         this.bindEvents();
-        this.checkSubscriptionStatus();
+        
+        // Verificar cache primeiro para resposta mais rápida
+        const eventId = this.getEventId();
+        if (eventId && this.isUserLoggedIn()) {
+            if (!this.loadStatusFromCache(eventId)) {
+                // Se não há cache válido, fazer requisição
+                this.checkSubscriptionStatus();
+            } else {
+                // Se há cache, fazer verificação em background
+                setTimeout(() => this.checkSubscriptionStatus(), 1000);
+            }
+        }
+        
         console.log('Sistema de Inscrições inicializado');
     }
 
@@ -52,6 +64,12 @@ class EventSubscriptionSystem {
             return;
         }
 
+        // Verificar se usuário está logado antes de verificar status
+        if (!this.isUserLoggedIn()) {
+            console.log('Usuário não está logado, não verificando status');
+            return;
+        }
+
         try {
             console.log('Verificando status de inscrição para evento:', eventId);
             
@@ -59,26 +77,59 @@ class EventSubscriptionSystem {
                 method: 'GET',
                 credentials: 'same-origin',
                 headers: {
-                    'Cache-Control': 'no-cache'
+                    'Cache-Control': 'no-cache',
+                    'Pragma': 'no-cache'
                 }
             });
 
             if (!response.ok) {
+                if (response.status === 401) {
+                    console.log('Usuário não autenticado');
+                    return;
+                }
                 throw new Error(`HTTP ${response.status}: ${response.statusText}`);
             }
 
             const result = await response.json();
-            console.log('Status de inscrição:', result);
+            console.log('Status de inscrição recebido:', result);
             
             if (result.success) {
                 this.updateSubscriptionUI(result.subscribed, result.data);
+                
+                // Salvar status no sessionStorage para persistir entre reloads
+                sessionStorage.setItem(`subscription_status_${eventId}`, JSON.stringify({
+                    subscribed: result.subscribed,
+                    data: result.data,
+                    timestamp: Date.now()
+                }));
             } else {
                 console.warn('Erro ao verificar status:', result.message);
             }
         } catch (error) {
             console.error('Erro ao verificar status de inscrição:', error);
-            // Não mostrar erro para o usuário, apenas log
+            
+            // Tentar usar dados do sessionStorage como fallback
+            this.loadStatusFromCache(eventId);
         }
+    }
+
+    loadStatusFromCache(eventId) {
+        try {
+            const cached = sessionStorage.getItem(`subscription_status_${eventId}`);
+            if (cached) {
+                const statusData = JSON.parse(cached);
+                
+                // Verificar se cache não é muito antigo (5 minutos)
+                if (Date.now() - statusData.timestamp < 5 * 60 * 1000) {
+                    console.log('Carregando status do cache:', statusData);
+                    this.updateSubscriptionUI(statusData.subscribed, statusData.data);
+                    return true;
+                }
+            }
+        } catch (error) {
+            console.error('Erro ao carregar cache:', error);
+        }
+        return false;
     }
 
     async handleSubscription() {
@@ -137,6 +188,14 @@ class EventSubscriptionSystem {
                 // Atualizar contador de participantes
                 this.updateParticipantCount(1);
                 
+                // Salvar status no sessionStorage
+                const eventId = this.getEventId();
+                sessionStorage.setItem(`subscription_status_${eventId}`, JSON.stringify({
+                    subscribed: true,
+                    data: result.data,
+                    timestamp: Date.now()
+                }));
+                
                 // Disparar evento customizado
                 this.dispatchEvent('subscriptionSuccess', result.data);
             } else {
@@ -191,6 +250,10 @@ class EventSubscriptionSystem {
                 
                 // Atualizar contador de participantes
                 this.updateParticipantCount(-1);
+                
+                // Remover status do sessionStorage
+                const eventId = this.getEventId();
+                sessionStorage.removeItem(`subscription_status_${eventId}`);
                 
                 // Disparar evento customizado
                 this.dispatchEvent('unsubscriptionSuccess', result.data);
@@ -267,20 +330,43 @@ class EventSubscriptionSystem {
             }
 
             if (subscriptionStatus) {
+                const dataInscricao = data && data.data_inscricao ? 
+                    new Date(data.data_inscricao).toLocaleDateString('pt-BR', {
+                        day: '2-digit',
+                        month: '2-digit', 
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit'
+                    }) : '';
+                
                 subscriptionStatus.innerHTML = `
                     <div class="alert alert-success">
                         <i class="fas fa-check-circle me-2"></i>
                         <strong>Você está inscrito neste evento!</strong>
-                        ${data && data.data_inscricao ? `<br><small>Inscrito em: ${new Date(data.data_inscricao).toLocaleDateString('pt-BR')}</small>` : ''}
+                        ${dataInscricao ? `<br><small>Inscrito em: ${dataInscricao}</small>` : ''}
+                        ${data && data.status ? `<br><small>Status: ${data.status}</small>` : ''}
                     </div>
                 `;
             }
 
+            // Adicionar classe para indicar sucesso
             if (container) {
                 container.classList.add('subscription-success');
                 setTimeout(() => {
                     container.classList.remove('subscription-success');
-                }, 600);
+                }, 1000);
+            }
+
+            // Atualizar card de inscrição se existir
+            const subscriptionCard = document.querySelector('.subscription-card');
+            if (subscriptionCard) {
+                subscriptionCard.classList.add('subscribed');
+                
+                // Atualizar título do card
+                const cardTitle = subscriptionCard.querySelector('h5');
+                if (cardTitle && !cardTitle.textContent.includes('Inscrito')) {
+                    cardTitle.innerHTML = '<i class="fas fa-check-circle me-2"></i>Você está Inscrito!';
+                }
             }
 
         } else {
@@ -295,6 +381,25 @@ class EventSubscriptionSystem {
 
             if (subscriptionStatus) {
                 subscriptionStatus.innerHTML = '';
+            }
+
+            // Remover classe de inscrito
+            const subscriptionCard = document.querySelector('.subscription-card');
+            if (subscriptionCard) {
+                subscriptionCard.classList.remove('subscribed');
+                
+                // Restaurar título original do card
+                const cardTitle = subscriptionCard.querySelector('h5');
+                if (cardTitle) {
+                    const eventoGratuito = document.body.getAttribute('data-evento-gratuito') === '1';
+                    const preco = document.body.getAttribute('data-evento-preco') || '0';
+                    
+                    if (eventoGratuito) {
+                        cardTitle.innerHTML = '<i class="fas fa-ticket-alt me-2"></i>Evento Gratuito';
+                    } else {
+                        cardTitle.innerHTML = `<i class="fas fa-ticket-alt me-2"></i>R$ ${parseFloat(preco).toFixed(2).replace('.', ',')}`;
+                    }
+                }
             }
         }
     }
@@ -592,8 +697,29 @@ const subscriptionCSS = `
         100% { transform: scale(1); }
     }
     
+    @keyframes fadeInUp {
+        from {
+            opacity: 0;
+            transform: translateY(20px);
+        }
+        to {
+            opacity: 1;
+            transform: translateY(0);
+        }
+    }
+    
     .subscription-success {
         animation: pulse 0.6s ease-in-out;
+    }
+    
+    .subscription-card.subscribed {
+        background: linear-gradient(135deg, #17a2b8, #138496) !important;
+        border: 2px solid #28a745;
+        animation: fadeInUp 0.5s ease-out;
+    }
+    
+    .subscription-card.subscribed h5 {
+        color: white !important;
     }
     
     #subscribe-btn, #unsubscribe-btn {
@@ -624,6 +750,12 @@ const subscriptionCSS = `
     .subscription-status {
         margin-bottom: 1rem;
         border-radius: 0.5rem;
+        animation: fadeInUp 0.5s ease-out;
+    }
+    
+    .subscription-status .alert {
+        border: none;
+        box-shadow: 0 4px 15px rgba(40, 167, 69, 0.2);
     }
     
     .progress-bar {
@@ -655,6 +787,29 @@ const subscriptionCSS = `
         100% { transform: translate(-50%, -50%) rotate(360deg); }
     }
     
+    /* Efeito de persistência visual */
+    .subscription-persisted {
+        position: relative;
+    }
+    
+    .subscription-persisted::before {
+        content: '';
+        position: absolute;
+        top: -2px;
+        left: -2px;
+        right: -2px;
+        bottom: -2px;
+        background: linear-gradient(45deg, #28a745, #20c997, #28a745);
+        border-radius: inherit;
+        z-index: -1;
+        animation: persistedGlow 2s ease-in-out infinite alternate;
+    }
+    
+    @keyframes persistedGlow {
+        0% { opacity: 0.5; }
+        100% { opacity: 0.8; }
+    }
+    
     /* Responsive adjustments */
     @media (max-width: 768px) {
         .alert.position-fixed {
@@ -668,6 +823,29 @@ const subscriptionCSS = `
             padding: 0.75rem 1rem;
             font-size: 0.9rem;
         }
+    }
+    
+    /* Status indicators */
+    .subscription-status-indicator {
+        display: inline-block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        margin-right: 8px;
+        animation: statusPulse 2s ease-in-out infinite;
+    }
+    
+    .subscription-status-indicator.subscribed {
+        background: #28a745;
+    }
+    
+    .subscription-status-indicator.not-subscribed {
+        background: #6c757d;
+    }
+    
+    @keyframes statusPulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.5; }
     }
 `;
 
