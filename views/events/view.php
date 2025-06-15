@@ -1,6 +1,6 @@
 <?php
 // ==========================================
-// PÁGINA DE VISUALIZAÇÃO DE EVENTOS - CORRIGIDA
+// PÁGINA DE VISUALIZAÇÃO DE EVENTOS - VERSÃO COMPLETA COM SISTEMA DE INSCRIÇÕES
 // Local: views/events/view.php
 // ==========================================
 
@@ -21,6 +21,7 @@ $homeUrl = '../../index.php';
 $isLoggedIn = isset($_SESSION['logged_in']) && $_SESSION['logged_in'] === true;
 $userName = $_SESSION['user_name'] ?? '';
 $userType = $_SESSION['user_type'] ?? '';
+$userId = $_SESSION['user_id'] ?? 0;
 
 // Buscar dados do evento
 $evento = null;
@@ -66,102 +67,43 @@ if (!$evento && !$error_message) {
             'email_organizador' => 'contato@techacademy.com',
             'imagem_capa' => '',
             'total_inscritos' => 45,
-            'descricao_detalhada' => 'Este workshop é ideal para desenvolvedores iniciantes e intermediários que desejam aprimorar suas habilidades em desenvolvimento web. Abordaremos tópicos como HTML5, CSS3, JavaScript ES6+, e frameworks modernos.',
-            'requisitos' => 'Conhecimento básico de programação, laptop próprio, editor de código instalado',
-            'informacoes_adicionais' => 'Notebook, carregador, bloco de notas'
-        ],
-        2 => [
-            'id_evento' => 2,
-            'titulo' => 'Palestra sobre Inteligência Artificial',
-            'descricao' => 'Uma visão abrangente sobre o futuro da IA e suas aplicações práticas no mundo dos negócios.',
-            'data_inicio' => date('Y-m-d', strtotime('+10 days')),
-            'horario_inicio' => '19:00:00',
-            'horario_fim' => '21:00:00',
-            'local_nome' => 'Auditório RJ Tech',
-            'local_endereco' => 'Rua das Laranjeiras, 500 - Rio de Janeiro, RJ',
-            'local_cidade' => 'Rio de Janeiro',
-            'local_estado' => 'RJ',
-            'evento_gratuito' => 0,
-            'preco' => 50.00,
-            'capacidade_maxima' => 200,
-            'nome_categoria' => 'Tecnologia',
-            'nome_organizador' => 'AI Institute',
-            'email_organizador' => 'eventos@aiinstitute.com',
-            'imagem_capa' => '',
-            'total_inscritos' => 32,
-            'descricao_detalhada' => 'Palestra com especialistas renomados em IA, abordando machine learning, deep learning e suas aplicações em diversos setores.',
-            'requisitos' => 'Interesse em tecnologia e inovação',
-            'informacoes_adicionais' => 'Apenas curiosidade e vontade de aprender!'
-        ],
-        3 => [
-            'id_evento' => 3,
-            'titulo' => 'Meetup de Empreendedorismo',
-            'descricao' => 'Encontro para empreendedores discutirem ideias, networking e oportunidades de negócio.',
-            'data_inicio' => date('Y-m-d', strtotime('+15 days')),
-            'horario_inicio' => '18:30:00',
-            'horario_fim' => '22:00:00',
-            'local_nome' => 'Hub BH',
-            'local_endereco' => 'Av. do Contorno, 300 - Belo Horizonte, MG',
-            'local_cidade' => 'Belo Horizonte',
-            'local_estado' => 'MG',
-            'evento_gratuito' => 1,
-            'preco' => 0,
-            'capacidade_maxima' => 50,
-            'nome_categoria' => 'Negócios',
-            'nome_organizador' => 'StartupBH',
-            'email_organizador' => 'contato@startupbh.com',
-            'imagem_capa' => '',
-            'total_inscritos' => 28,
-            'descricao_detalhada' => 'Evento focado em networking entre empreendedores, apresentação de startups e discussões sobre o ecossistema empreendedor.',
-            'requisitos' => 'Interesse em empreendedorismo',
-            'informacoes_adicionais' => 'Cartões de visita, apresentação da sua startup (opcional)'
+            'status' => 'publicado'
         ]
     ];
 
-    // Buscar evento específico baseado no ID
-    $evento = $eventos_exemplo[$evento_id] ?? null;
-    
-    if (!$evento) {
-        error_log("Evento de exemplo não encontrado para ID: " . $evento_id);
-        header("Location: ../../index.php");
-        exit;
-    }
-    
-    // Garantir que o ID está correto
+    $evento = $eventos_exemplo[$evento_id] ?? $eventos_exemplo[1];
     $evento['id_evento'] = $evento_id;
-    error_log("Usando evento de exemplo: " . $evento['titulo'] . " (ID: " . $evento_id . ")");
-}
-
-// Processar inscrição
-$inscricao_message = '';
-$inscricao_type = '';
-
-if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['inscrever'])) {
-    if (!$isLoggedIn) {
-        $inscricao_message = "Você precisa fazer login para se inscrever no evento.";
-        $inscricao_type = "warning";
-    } else {
-        // Simular inscrição bem-sucedida
-        $inscricao_message = "Inscrição realizada com sucesso! Você receberá um email de confirmação.";
-        $inscricao_type = "success";
-        $evento['total_inscritos']++; // Incrementar contador
-    }
 }
 
 // Garantir que campos obrigatórios existem
 $evento['descricao_detalhada'] = $evento['descricao_detalhada'] ?? $evento['descricao'];
 $evento['requisitos'] = $evento['requisitos'] ?? '';
 $evento['informacoes_adicionais'] = $evento['informacoes_adicionais'] ?? '';
-$evento['nome_categoria'] = $evento['nome_categoria'] ?? 'Geral';
-$evento['nome_organizador'] = $evento['nome_organizador'] ?? 'Organizador';
-$evento['email_organizador'] = $evento['email_organizador'] ?? 'contato@conectaeventos.com';
 
 // URL da imagem
 $currentImageUrl = '';
 if (!empty($evento['imagem_capa'])) {
     $currentImageUrl = 'https://conecta-eventos-production.up.railway.app/uploads/eventos/' . $evento['imagem_capa'];
-} elseif (!empty($evento['imagem_url'])) {
-    $currentImageUrl = $evento['imagem_url'];
+}
+
+// Verificar se usuário pode editar (se for organizador do evento)
+$canEdit = false;
+if ($isLoggedIn && $userType === 'organizador') {
+    try {
+        $canEdit = $eventController->canEdit($evento_id);
+    } catch (Exception $e) {
+        // Ignorar erro
+    }
+}
+
+// Verificar se pode se inscrever
+$canSubscribe = false;
+$subscriptionStatus = null;
+
+if ($isLoggedIn && $userType === 'participante') {
+    $canSubscribe = ($evento['status'] === 'publicado' && 
+                    strtotime($evento['data_inicio']) > time() &&
+                    (!$evento['capacidade_maxima'] || $evento['total_inscritos'] < $evento['capacidade_maxima']));
 }
 ?>
 
@@ -171,10 +113,19 @@ if (!empty($evento['imagem_capa'])) {
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($evento['titulo']) . ' - ' . $title; ?></title>
+    
+    <!-- Meta tags para o evento -->
+    <meta name="event-id" content="<?php echo $evento['id_evento']; ?>">
+    <meta name="description" content="<?php echo htmlspecialchars(substr($evento['descricao'], 0, 160)); ?>">
+    
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
     
     <style>
+        body {
+            <?php if ($isLoggedIn): ?>class="user-logged-in"<?php endif; ?>
+        }
+        
         .hero-event {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
@@ -224,17 +175,21 @@ if (!empty($evento['imagem_capa'])) {
             margin-bottom: 1rem;
         }
         
-        .price-display {
+        .subscription-card {
             background: linear-gradient(135deg, #28a745, #20c997);
             color: white;
-            padding: 1rem;
             border-radius: 1rem;
+            padding: 1.5rem;
             text-align: center;
             margin-bottom: 1rem;
         }
         
-        .price-display.paid {
-            background: linear-gradient(135deg, #007bff, #0056b3);
+        .subscription-card.subscribed {
+            background: linear-gradient(135deg, #17a2b8, #138496);
+        }
+        
+        .subscription-card.unavailable {
+            background: linear-gradient(135deg, #6c757d, #5a6268);
         }
         
         .organizer-card {
@@ -270,21 +225,31 @@ if (!empty($evento['imagem_capa'])) {
             font-weight: 600;
             border-radius: 0.5rem;
             transition: all 0.3s ease;
+            width: 100%;
         }
         
-        .btn-inscricao:hover {
+        .btn-inscricao:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
             color: white;
         }
         
-        .breadcrumb {
-            background: transparent;
-            padding: 0;
+        .btn-cancelar {
+            background: linear-gradient(135deg, #dc3545, #c82333);
+            border: none;
+            color: white;
+            padding: 0.75rem 2rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border-radius: 0.5rem;
+            transition: all 0.3s ease;
+            width: 100%;
         }
         
-        .breadcrumb-item + .breadcrumb-item::before {
-            color: #667eea;
+        .btn-cancelar:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 15px rgba(220, 53, 69, 0.3);
+            color: white;
         }
         
         .event-meta {
@@ -293,9 +258,36 @@ if (!empty($evento['imagem_capa'])) {
             padding: 1rem;
             margin-top: 1rem;
         }
+        
+        .toast-notification {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 9999;
+            min-width: 300px;
+            max-width: 400px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            animation: slideInRight 0.3s ease-out;
+        }
+        
+        @keyframes slideInRight {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+        
+        .breadcrumb {
+            background: transparent;
+            padding: 0;
+        }
     </style>
 </head>
-<body>
+<body data-event-id="<?php echo $evento['id_evento']; ?>" <?php if ($isLoggedIn): ?>class="user-logged-in"<?php endif; ?>>
     <!-- Header -->
     <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
         <div class="container">
@@ -352,7 +344,7 @@ if (!empty($evento['imagem_capa'])) {
                             <i class="fas fa-tag me-1"></i><?php echo htmlspecialchars($evento['nome_categoria']); ?>
                         </span>
                         <span class="badge bg-warning text-dark fs-6">
-                            <i class="fas fa-users me-1"></i><?php echo $evento['total_inscritos']; ?> inscritos
+                            <i class="fas fa-users me-1"></i><span class="participant-count"><?php echo $evento['total_inscritos']; ?></span> inscritos
                         </span>
                     </div>
                     <h1 class="display-5 mb-3"><?php echo htmlspecialchars($evento['titulo']); ?></h1>
@@ -387,7 +379,6 @@ if (!empty($evento['imagem_capa'])) {
                     </div>
                 </div>
                 <div class="col-lg-4">
-                    <!-- Espaço para informações adicionais -->
                     <div class="text-center">
                         <div class="badge bg-success fs-5 px-3 py-2">
                             <i class="fas fa-ticket-alt me-2"></i>
@@ -413,14 +404,6 @@ if (!empty($evento['imagem_capa'])) {
             </div>
         <?php endif; ?>
 
-        <?php if ($inscricao_message): ?>
-            <div class="alert alert-<?php echo $inscricao_type; ?> alert-dismissible fade show" role="alert">
-                <i class="fas fa-<?php echo $inscricao_type === 'success' ? 'check-circle' : 'exclamation-triangle'; ?> me-2"></i>
-                <?php echo htmlspecialchars($inscricao_message); ?>
-                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-            </div>
-        <?php endif; ?>
-
         <div class="row">
             <!-- Conteúdo Principal -->
             <div class="col-lg-8">
@@ -429,7 +412,15 @@ if (!empty($evento['imagem_capa'])) {
                     <?php if ($currentImageUrl): ?>
                         <img src="<?php echo htmlspecialchars($currentImageUrl); ?>" 
                              alt="<?php echo htmlspecialchars($evento['titulo']); ?>"
-                             class="event-image">
+                             class="event-image"
+                             onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                        <div class="no-image" style="display: none;">
+                            <div class="text-center">
+                                <i class="fas fa-image fa-4x mb-3"></i>
+                                <h5>Imagem não disponível</h5>
+                                <p class="text-muted">A imagem do evento não pôde ser carregada</p>
+                            </div>
+                        </div>
                     <?php else: ?>
                         <div class="no-image">
                             <div class="text-center">
@@ -488,29 +479,80 @@ if (!empty($evento['imagem_capa'])) {
 
             <!-- Sidebar -->
             <div class="col-lg-4">
-                <!-- Preço e Inscrição -->
-                <div class="<?php echo $evento['evento_gratuito'] ? 'price-display' : 'price-display paid'; ?>">
-                    <h4 class="mb-2">
-                        <?php if ($evento['evento_gratuito']): ?>
-                            <i class="fas fa-gift me-2"></i>Evento Gratuito
-                        <?php else: ?>
-                            <i class="fas fa-tag me-2"></i>R$ <?php echo number_format($evento['preco'], 2, ',', '.'); ?>
-                        <?php endif; ?>
-                    </h4>
-                    <p class="mb-3 opacity-75">
-                        <?php echo $evento['evento_gratuito'] ? 'Inscrição gratuita' : 'Por participante'; ?>
-                    </p>
+                <!-- Container de Inscrição -->
+                <div id="subscription-container">
+                    <!-- Status da Inscrição -->
+                    <div id="subscription-status"></div>
                     
-                    <?php if ($isLoggedIn): ?>
-                        <form method="POST">
-                            <button type="submit" name="inscrever" class="btn btn-inscricao w-100 btn-lg">
-                                <i class="fas fa-user-plus me-2"></i>Inscrever-se
+                    <!-- Botões de Inscrição -->
+                    <?php if ($canEdit): ?>
+                        <!-- Organizador - Botões de gerenciamento -->
+                        <div class="subscription-card">
+                            <h5 class="mb-3">
+                                <i class="fas fa-user-tie me-2"></i>Seu Evento
+                            </h5>
+                            <div class="d-grid gap-2">
+                                <a href="edit.php?id=<?php echo $evento['id_evento']; ?>" class="btn btn-light">
+                                    <i class="fas fa-edit me-2"></i>Editar Evento
+                                </a>
+                                <a href="subscribers.php?id=<?php echo $evento['id_evento']; ?>" class="btn btn-outline-light">
+                                    <i class="fas fa-users me-2"></i>Ver Inscritos
+                                </a>
+                            </div>
+                        </div>
+                    <?php elseif ($isLoggedIn && $userType === 'participante'): ?>
+                        <!-- Participante - Sistema de inscrição -->
+                        <div class="subscription-card">
+                            <h5 class="mb-3">
+                                <i class="fas fa-ticket-alt me-2"></i>
+                                <?php if ($evento['evento_gratuito']): ?>
+                                    Evento Gratuito
+                                <?php else: ?>
+                                    R$ <?php echo number_format($evento['preco'], 2, ',', '.'); ?>
+                                <?php endif; ?>
+                            </h5>
+                            
+                            <?php if ($canSubscribe): ?>
+                                <button type="button" id="subscribe-btn" class="btn btn-inscricao">
+                                    <i class="fas fa-user-plus me-2"></i>Inscrever-se
+                                </button>
+                            <?php else: ?>
+                                <button type="button" class="btn btn-inscricao" disabled>
+                                    <i class="fas fa-times me-2"></i>
+                                    <?php 
+                                    if ($evento['status'] !== 'publicado') {
+                                        echo 'Evento não disponível';
+                                    } elseif (strtotime($evento['data_inicio']) <= time()) {
+                                        echo 'Evento já ocorreu';
+                                    } elseif ($evento['capacidade_maxima'] && $evento['total_inscritos'] >= $evento['capacidade_maxima']) {
+                                        echo 'Vagas esgotadas';
+                                    } else {
+                                        echo 'Inscrições encerradas';
+                                    }
+                                    ?>
+                                </button>
+                            <?php endif; ?>
+                            
+                            <button type="button" id="unsubscribe-btn" class="btn btn-cancelar" style="display: none;">
+                                <i class="fas fa-user-minus me-2"></i>Cancelar Inscrição
                             </button>
-                        </form>
+                        </div>
                     <?php else: ?>
-                        <a href="../auth/login.php" class="btn btn-inscricao w-100 btn-lg">
-                            <i class="fas fa-sign-in-alt me-2"></i>Faça Login para se Inscrever
-                        </a>
+                        <!-- Usuário não logado -->
+                        <div class="subscription-card">
+                            <h5 class="mb-3">
+                                <i class="fas fa-ticket-alt me-2"></i>
+                                <?php if ($evento['evento_gratuito']): ?>
+                                    Evento Gratuito
+                                <?php else: ?>
+                                    R$ <?php echo number_format($evento['preco'], 2, ',', '.'); ?>
+                                <?php endif; ?>
+                            </h5>
+                            <p class="mb-3">Faça login para se inscrever</p>
+                            <a href="../auth/login.php" class="btn btn-light w-100">
+                                <i class="fas fa-sign-in-alt me-2"></i>Fazer Login
+                            </a>
+                        </div>
                     <?php endif; ?>
                 </div>
 
@@ -519,11 +561,11 @@ if (!empty($evento['imagem_capa'])) {
                     <h6><i class="fas fa-users me-2"></i>Participação</h6>
                     <div class="d-flex justify-content-between mb-2">
                         <span>Inscritos:</span>
-                        <strong><?php echo $evento['total_inscritos']; ?></strong>
+                        <strong class="total-inscritos"><?php echo $evento['total_inscritos']; ?></strong>
                     </div>
                     <div class="d-flex justify-content-between mb-2">
                         <span>Vagas totais:</span>
-                        <strong><?php echo $evento['capacidade_maxima'] ?: '∞'; ?></strong>
+                        <strong class="capacity-max"><?php echo $evento['capacidade_maxima'] ?: '∞'; ?></strong>
                     </div>
                     <?php if ($evento['capacidade_maxima']): ?>
                         <div class="d-flex justify-content-between">
@@ -535,7 +577,10 @@ if (!empty($evento['imagem_capa'])) {
                         
                         <div class="progress mt-3">
                             <div class="progress-bar bg-success" 
-                                 style="width: <?php echo min(100, ($evento['total_inscritos'] / $evento['capacidade_maxima']) * 100); ?>%">
+                                 style="width: <?php echo min(100, ($evento['total_inscritos'] / $evento['capacidade_maxima']) * 100); ?>%"
+                                 aria-valuenow="<?php echo min(100, ($evento['total_inscritos'] / $evento['capacidade_maxima']) * 100); ?>"
+                                 aria-valuemin="0" 
+                                 aria-valuemax="100">
                             </div>
                         </div>
                     <?php endif; ?>
@@ -573,51 +618,14 @@ if (!empty($evento['imagem_capa'])) {
                         </button>
                     </div>
                 </div>
-
-                <!-- Informações Extras -->
-                <div class="info-card">
-                    <h6><i class="fas fa-calendar-check me-2"></i>Detalhes do Evento</h6>
-                    <div class="small">
-                        <div class="mb-2">
-                            <strong>ID do Evento:</strong> #<?php echo $evento['id_evento']; ?>
-                        </div>
-                        <div class="mb-2">
-                            <strong>Categoria:</strong> <?php echo htmlspecialchars($evento['nome_categoria']); ?>
-                        </div>
-                        <div class="mb-2">
-                            <strong>Data:</strong> <?php echo date('d/m/Y', strtotime($evento['data_inicio'])); ?>
-                        </div>
-                        <div class="mb-2">
-                            <strong>Horário:</strong> <?php echo date('H:i', strtotime($evento['horario_inicio'])); ?>
-                            <?php if (!empty($evento['horario_fim']) && $evento['horario_fim'] !== $evento['horario_inicio']): ?>
-                                - <?php echo date('H:i', strtotime($evento['horario_fim'])); ?>
-                            <?php endif; ?>
-                        </div>
-                        <div>
-                            <strong>Local:</strong> <?php echo htmlspecialchars($evento['local_cidade']); ?>, <?php echo htmlspecialchars($evento['local_estado']); ?>
-                        </div>
-                    </div>
-                </div>
             </div>
         </div>
     </div>
 
-    <!-- Footer -->
-    <footer class="bg-dark text-white py-4 mt-5">
-        <div class="container">
-            <div class="row">
-                <div class="col-md-6">
-                    <h5>Conecta Eventos</h5>
-                    <p class="mb-0">Conectando pessoas através de experiências incríveis.</p>
-                </div>
-                <div class="col-md-6 text-md-end">
-                    <p class="mb-0">&copy; 2024 Conecta Eventos. Desenvolvido por João Vitor da Silva.</p>
-                </div>
-            </div>
-        </div>
-    </footer>
-
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    
+    <!-- Sistema de Inscrições JavaScript -->
+    <script src="../../public/js/subscriptions.js"></script>
     
     <script>
         document.addEventListener('DOMContentLoaded', function() {
@@ -639,15 +647,6 @@ if (!empty($evento['imagem_capa'])) {
                 }, 5000);
             });
 
-            // Botão de inscrição com loading
-            const inscricaoBtn = document.querySelector('button[name="inscrever"]');
-            if (inscricaoBtn) {
-                inscricaoBtn.addEventListener('click', function() {
-                    this.disabled = true;
-                    this.innerHTML = '<i class="fas fa-spinner fa-spin me-2"></i>Processando...';
-                });
-            }
-
             // Animação suave para seções
             const observer = new IntersectionObserver(function(entries) {
                 entries.forEach(entry => {
@@ -663,6 +662,15 @@ if (!empty($evento['imagem_capa'])) {
                 el.style.transform = 'translateY(20px)';
                 el.style.transition = 'all 0.6s ease-out';
                 observer.observe(el);
+            });
+
+            // Listeners de eventos customizados do sistema de inscrições
+            document.addEventListener('subscriptionSuccess', function(event) {
+                console.log('Inscrição realizada com sucesso:', event.detail);
+            });
+
+            document.addEventListener('unsubscriptionSuccess', function(event) {
+                console.log('Inscrição cancelada com sucesso:', event.detail);
             });
         });
 
@@ -704,8 +712,15 @@ if (!empty($evento['imagem_capa'])) {
             });
         }
 
-        // Sistema de toast notifications
+        // Sistema de toast notifications (compatível com subscriptions.js)
         function showToast(message, type = 'info') {
+            // Usar sistema de toast existente ou criar um simples
+            if (typeof window.EventSubscriptions !== 'undefined' && window.EventSubscriptions.showToast) {
+                window.EventSubscriptions.showToast(message, type);
+                return;
+            }
+
+            // Fallback: criar toast simples
             const toast = document.createElement('div');
             toast.className = `alert alert-${type === 'error' ? 'danger' : type} alert-dismissible fade show position-fixed`;
             toast.style.cssText = `

@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teste da API de Inscrições</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .log-area {
+            background: #f8f9fa;
+            border: 1px solid #dee2e6;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            font-family: monospace;
+            font-size: 0.875rem;
+            max-height: 400px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+        }
+        .test-section {
+            border: 1px solid #dee2e6;
+            border-radius: 0.5rem;
+            padding: 1.5rem;
+            margin-bottom: 1rem;
+        }
+    </style>
+</head>
+<body>
+    <div class="container my-4">
+        <h1>Teste da API de Inscrições</h1>
+        <p class="text-muted">Use esta página para testar o sistema de inscrições em eventos.</p>
+
+        <!-- Configurações -->
+        <div class="test-section">
+            <h3>Configurações do Teste</h3>
+            <div class="row">
+                <div class="col-md-6">
+                    <label for="eventId" class="form-label">ID do Evento:</label>
+                    <input type="number" class="form-control" id="eventId" value="5" min="1">
+                </div>
+                <div class="col-md-6">
+                    <label for="apiUrl" class="form-label">URL da API:</label>
+                    <input type="text" class="form-control" id="apiUrl" value="/api/subscriptions.php">
+                </div>
+            </div>
+        </div>
+
+        <!-- Status do Sistema -->
+        <div class="test-section">
+            <h3>Status do Sistema</h3>
+            <div class="row">
+                <div class="col-md-6">
+                    <button class="btn btn-info" onclick="checkSystemStatus()">Verificar Sistema</button>
+                    <button class="btn btn-secondary" onclick="checkEventStatus()">Status do Evento</button>
+                </div>
+                <div class="col-md-6">
+                    <div id="systemStatus" class="alert alert-secondary">
+                        <small>Clique em "Verificar Sistema" para ver o status</small>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Testes de Inscrição -->
+        <div class="test-section">
+            <h3>Testes de Inscrição</h3>
+            <div class="row">
+                <div class="col-md-8">
+                    <div class="btn-group mb-3" role="group">
+                        <button class="btn btn-primary" onclick="testSubscription()">Testar Inscrição</button>
+                        <button class="btn btn-warning" onclick="checkSubscriptionStatus()">Verificar Status</button>
+                        <button class="btn btn-danger" onclick="testUnsubscription()">Testar Cancelamento</button>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label for="observacoes" class="form-label">Observações (opcional):</label>
+                        <textarea class="form-control" id="observacoes" rows="2" placeholder="Adicione observações para a inscrição..."></textarea>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="alert alert-info">
+                        <strong>Nota:</strong> Você precisa estar logado como participante para testar as inscrições.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Log de Atividades -->
+        <div class="test-section">
+            <h3>Log de Atividades</h3>
+            <div class="d-flex justify-content-between mb-2">
+                <span>Logs dos testes realizados:</span>
+                <button class="btn btn-sm btn-outline-secondary" onclick="clearLog()">Limpar Log</button>
+            </div>
+            <div id="logArea" class="log-area">
+                Aguardando testes...\n
+            </div>
+        </div>
+
+        <!-- Informações de Debug -->
+        <div class="test-section">
+            <h3>Debug do Sistema</h3>
+            <button class="btn btn-secondary" onclick="getDebugInfo()">Obter Informações de Debug</button>
+            <div id="debugInfo" class="mt-3"></div>
+        </div>
+    </div>
+
+    <script>
+        let logArea = document.getElementById('logArea');
+
+        function log(message, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const prefix = type === 'error' ? '❌' : type === 'success' ? '✅' : type === 'warning' ? '⚠️' : 'ℹ️';
+            logArea.textContent += `[${timestamp}] ${prefix} ${message}\n`;
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+
+        function clearLog() {
+            logArea.textContent = 'Log limpo.\n';
+        }
+
+        async function makeApiRequest(method, data = null) {
+            const eventId = document.getElementById('eventId').value;
+            const apiUrl = document.getElementById('apiUrl').value;
+            
+            try {
+                log(`Fazendo requisição ${method} para ${apiUrl}`);
+                
+                let options = {
+                    method: method,
+                    credentials: 'same-origin'
+                };
+
+                if (method === 'POST' && data) {
+                    const formData = new FormData();
+                    formData.append('event_id', eventId);
+                    if (data.observacoes) {
+                        formData.append('observacoes', data.observacoes);
+                    }
+                    options.body = formData;
+                } else if (method === 'DELETE') {
+                    options.headers = { 'Content-Type': 'application/json' };
+                    options.body = JSON.stringify({ event_id: eventId });
+                } else if (method === 'GET') {
+                    const url = new URL(apiUrl, window.location.origin);
+                    url.searchParams.append('event_id', eventId);
+                    options = { ...options, method: 'GET' };
+                    
+                    const response = await fetch(url.toString(), options);
+                    return await handleResponse(response);
+                }
+
+                const response = await fetch(apiUrl, options);
+                return await handleResponse(response);
+                
+            } catch (error) {
+                log(`Erro na requisição: ${error.message}`, 'error');
+                return null;
+            }
+        }
+
+        async function handleResponse(response) {
+            log(`Resposta recebida: ${response.status} ${response.statusText}`);
+            
+            if (!response.ok) {
+                log(`Erro HTTP: ${response.status}`, 'error');
+                const text = await response.text();
+                log(`Conteúdo da resposta: ${text}`, 'error');
+                return null;
+            }
+
+            try {
+                const data = await response.json();
+                log(`Dados JSON: ${JSON.stringify(data, null, 2)}`);
+                return data;
+            } catch (error) {
+                log(`Erro ao parsear JSON: ${error.message}`, 'error');
+                const text = await response.text();
+                log(`Conteúdo bruto: ${text}`, 'warning');
+                return null;
+            }
+        }
+
+        async function testSubscription() {
+            log('🧪 Iniciando teste de inscrição...', 'info');
+            const observacoes = document.getElementById('observacoes').value;
+            
+            const result = await makeApiRequest('POST', { observacoes });
+            
+            if (result) {
+                if (result.success) {
+                    log('✅ Inscrição realizada com sucesso!', 'success');
+                } else {
+                    log(`❌ Falha na inscrição: ${result.message}`, 'error');
+                }
+            }
+        }
+
+        async function checkSubscriptionStatus() {
+            log('🔍 Verificando status de inscrição...', 'info');
+            
+            const result = await makeApiRequest('GET');
+            
+            if (result) {
+                if (result.success) {
+                    if (result.subscribed) {
+                        log('✅ Usuário está inscrito no evento', 'success');
+                        log(`Detalhes: ${JSON.stringify(result.data, null, 2)}`);
+                    } else {
+                        log('ℹ️ Usuário não está inscrito no evento', 'info');
+                    }
+                } else {
+                    log(`❌ Erro ao verificar status: ${result.message}`, 'error');
+                }
+            }
+        }
+
+        async function testUnsubscription() {
+            log('🧪 Iniciando teste de cancelamento...', 'info');
+            
+            const result = await makeApiRequest('DELETE');
+            
+            if (result) {
+                if (result.success) {
+                    log('✅ Inscrição cancelada com sucesso!', 'success');
+                } else {
+                    log(`❌ Falha no cancelamento: ${result.message}`, 'error');
+                }
+            }
+        }
+
+        async function checkSystemStatus() {
+            log('🔧 Verificando status do sistema...', 'info');
+            
+            try {
+                const response = await fetch('/debug_subscriptions.php', {
+                    credentials: 'same-origin'
+                });
+                
+                if (response.ok) {
+                    const debugData = await response.json();
+                    
+                    const statusDiv = document.getElementById('systemStatus');
+                    let statusHtml = '<strong>Status do Sistema:</strong><br>';
+                    
+                    // Verificar banco de dados
+                    if (debugData.database_test.status === 'connected') {
+                        statusHtml += '✅ Banco de dados: Conectado<br>';
+                    } else {
+                        statusHtml += '❌ Banco de dados: Problema<br>';
+                    }
+                    
+                    // Verificar arquivos
+                    if (debugData.files_check.api_exists) {
+                        statusHtml += '✅ API: Arquivo existe<br>';
+                    } else {
+                        statusHtml += '❌ API: Arquivo não encontrado<br>';
+                    }
+                    
+                    // Verificar sessão
+                    if (debugData.session_data.logged_in) {
+                        statusHtml += `✅ Usuário: Logado como ${debugData.session_data.user_type}<br>`;
+                    } else {
+                        statusHtml += '⚠️ Usuário: Não logado<br>';
+                    }
+                    
+                    statusDiv.innerHTML = statusHtml;
+                    statusDiv.className = 'alert alert-info';
+                    
+                    log('✅ Status do sistema verificado com sucesso', 'success');
+                } else {
+                    log('❌ Erro ao verificar status do sistema', 'error');
+                }
+            } catch (error) {
+                log(`❌ Erro ao verificar sistema: ${error.message}`, 'error');
+            }
+        }
+
+        async function checkEventStatus() {
+            const eventId = document.getElementById('eventId').value;
+            log(`🔍 Verificando status do evento ID: ${eventId}...`, 'info');
+            
+            try {
+                const response = await fetch(`/debug_subscriptions.php?event_id=${eventId}`, {
+                    credentials: 'same-origin'
+                });
+                
+                if (response.ok) {
+                    const debugData = await response.json();
+                    
+                    if (debugData.event_test) {
+                        if (debugData.event_test.found) {
+                            log('✅ Evento encontrado no banco de dados', 'success');
+                            log(`Título: ${debugData.event_test.event_data.titulo}`);
+                            log(`Status: ${debugData.event_test.event_data.status}`);
+                            log(`Total de inscrições: ${debugData.event_test.total_inscricoes}`);
+                        } else {
+                            log('❌ Evento não encontrado no banco de dados', 'error');
+                        }
+                    }
+                } else {
+                    log('❌ Erro ao verificar evento', 'error');
+                }
+            } catch (error) {
+                log(`❌ Erro: ${error.message}`, 'error');
+            }
+        }
+
+        async function getDebugInfo() {
+            log('🔧 Obtendo informações de debug...', 'info');
+            
+            try {
+                const response = await fetch('/debug_subscriptions.php', {
+                    credentials: 'same-origin'
+                });
+                
+                if (response.ok) {
+                    const debugData = await response.json();
+                    
+                    const debugDiv = document.getElementById('debugInfo');
+                    debugDiv.innerHTML = `<pre class="bg-light p-3 border rounded">${JSON.stringify(debugData, null, 2)}</pre>`;
+                    
+                    log('✅ Informações de debug obtidas', 'success');
+                } else {
+                    log('❌ Erro ao obter debug', 'error');
+                }
+            } catch (error) {
+                log(`❌ Erro: ${error.message}`, 'error');
+            }
+        }
+
+        // Inicializar página
+        document.addEventListener('DOMContentLoaded', function() {
+            log('🚀 Página de teste carregada');
+            log('ℹ️ Configure o ID do evento e clique nos botões para testar');
+        });
+    </script>
+</body>
+</html>
